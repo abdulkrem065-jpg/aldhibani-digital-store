@@ -1,0 +1,6 @@
+{
+  "name": "مستودع ومتجر الذيباني VIP",
+  "description": "مستودع ومتجر الذيباني VIP - بوابة الشحن الفوري للألعاب والبطاقات، والهايبرماركت الإلكتروني المتكامل للمواد التموينية اليمنية الفاخرة.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
