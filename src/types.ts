@@ -32,6 +32,23 @@ export interface StoreConfig {
   exchangeRateUSD: number; // 1 USD = X YER (e.g., 530Y / 1500Y)
   exchangeRateSAR: number; // 1 SAR = X YER (e.g., 140Y / 400Y)
   activePaymentMethods?: string[]; // Added to configure active payment methods!
+  integrationType?: 'WEB' | 'DESKTOP' | 'ANDROID' | 'EXCEL'; // Integration selector
+  integrationEndpoint?: string; // API URL or connection path
+  integrationApiKey?: string;  // API token/secret
+  adminPassword?: string;      // administrator credential 'admin'
+  cashierPassword?: string;    // cashier credential 'cashier'
+  telecomPassword?: string;    // telecom credential 'telecom'
+  secureSystemToken?: string;  // bypass storefront TOKEN
+  
+  // Remote sync and connection settings (Cloud alternative to AnyDesk)
+  remoteSyncMethod?: 'API_DIRECT' | 'GDRIVE_BACKUP';
+  remoteApiUrl?: string;
+  remoteApiKey?: string;
+  remoteGDriveFolderId?: string;
+  remoteGDriveBackupName?: string;
+  remoteSyncInterval?: number; // minutes
+  remoteLastSyncTime?: string;
+  remoteSyncStatus?: 'CONNECTED' | 'DISCONNECTED' | 'SYNCING';
 }
 
 export type ProductCategory = string;

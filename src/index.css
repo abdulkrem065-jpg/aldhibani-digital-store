@@ -53,3 +53,68 @@ html {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* 📋 HIGH-PREPARATION THERMAL/A4 INVOICE PRINT MEDIA STATEMENTS */
+@media print {
+  /* Completely deactivate screen components */
+  body * {
+    visibility: hidden !important;
+  }
+  
+  /* Turn on the target printable document workspace selectively */
+  #printable-order-invoice-area,
+  #printable-order-invoice-area * {
+    visibility: visible !important;
+  }
+  
+  /* Reset the invoice wrapper for accurate thermal/sheet output */
+  #printable-order-invoice-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    display: block !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 15px !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    font-size: 11px !important;
+    font-family: system-ui, -apple-system, sans-serif !important;
+    line-height: 1.5 !important;
+  }
+
+  /* Neutralize all web shadows, neon glows, and dark canvas elements */
+  #printable-order-invoice-area * {
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Force solid black ink headings in Arabic and English */
+  #printable-order-invoice-area h1,
+  #printable-order-invoice-area h2,
+  #printable-order-invoice-area h3,
+  #printable-order-invoice-area h4,
+  #printable-order-invoice-area p,
+  #printable-order-invoice-area span,
+  #printable-order-invoice-area div,
+  #printable-order-invoice-area td,
+  #printable-order-invoice-area th {
+    color: #000000 !important;
+  }
+
+  /* Solid line borders for lists */
+  .print-border-dash {
+    border-style: dashed !important;
+    border-color: #000000 !important;
+    border-width: 1.5px 0 0 0 !important;
+  }
+
+  /* Page margins adjustments */
+  @page {
+    margin: 0.6cm;
+  }
+}

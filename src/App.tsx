@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Building, Layers, Bot, Radio, Cpu, RefreshCw, Sparkles, 
   HelpCircle, ArrowLeftRight, CheckCircle2, ShoppingBag, Terminal, Store, ShoppingCart,
-  Search, ClipboardList, Clock, Truck, X, FileText, Gift, Phone, User
+  Search, ClipboardList, Clock, Truck, X, FileText, Gift, Phone, User, Printer
 } from 'lucide-react';
 
 import { Product, CartItem, Currency, Language, StaffUser, StoreConfig, ProductCategory, CustomCategory } from './types';
@@ -17,6 +17,12 @@ import Header from './layout/Header';
 import Sections from './matrix/Sections';
 import { ProductCard, ShoppingCartDrawer } from './components/Cards';
 import Dashboard from './admin/Dashboard';
+import { 
+  DEFAULT_STORE_CONFIG, DEFAULT_CATEGORIES, DEFAULT_PRODUCTS, 
+  DEFAULT_ORDERS, DEFAULT_DEBTS, DEFAULT_STAFF, 
+  getSavedItem, saveItem 
+} from './data/defaultData';
+import { SupabaseServerlessDB } from './lib/supabase';
 
 export default function App() {
   // Session Router States
@@ -35,19 +41,10 @@ export default function App() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Store data synced with server state
-  const [config, setConfig] = useState<StoreConfig>({
-    shopNameAR: 'مستودع ومتجر الذيباني VIP',
-    shopNameEN: 'Al-Dheebani VIP Hybrid Warehouse',
-    logoEmoji: '🔱',
-    tickerTextAR: '🔥 مرحباً بكم في مستودع ومتجر الذيباني VIP الشامل للاتصالات وشحن الألعاب والتموينات الغذائية الفاخرة بجودة معتمدة! 🚀',
-    tickerTextEN: '🔥 Welcome to Al-Dheebani VIP Hybrid Warehouse: Best pricing for airtimes, game topups and gourmet groceries! 🚀',
-    exchangeRateUSD: 530,
-    exchangeRateSAR: 140,
-  });
-
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<CustomCategory[]>([]);
+  // Store data synced with serverless state (Supabase authority)
+  const [config, setConfig] = useState<StoreConfig>(() => SupabaseServerlessDB.getConfig());
+  const [products, setProducts] = useState<Product[]>(() => SupabaseServerlessDB.getProducts());
+  const [categories, setCategories] = useState<CustomCategory[]>(() => SupabaseServerlessDB.getCategories());
   const [activeCategory, setActiveCategory] = useState<ProductCategory | 'ALL'>('ALL');
   const [activeBrand, setActiveBrand] = useState<string | 'ALL'>('ALL');
   const [loading, setLoading] = useState(true);
@@ -101,17 +98,23 @@ export default function App() {
         const found = orders.find((o: any) => o.id.toUpperCase() === storefrontTrackingId.trim().toUpperCase());
         if (found) {
           setStorefrontTrackedOrder(found);
-        } else {
-          setStorefrontTrackingError(language === 'AR'
-            ? 'لم نجد أي طلب بهذا الرقم المرجعي المعطى. رجاءً تأكد من صحة رقم الطلب وأعد البحث.'
-            : 'Order tracking ID not found. Please check and try again.'
-          );
+          setStorefrontIsSearching(false);
+          return;
         }
-      } else {
-        setStorefrontTrackingError(language === 'AR' ? 'عذراً، فشل الاتصال بقاعدة بيانات تتبع الطلبات.' : 'Tracking database connection failed.');
       }
+      throw new Error('Fallback search');
     } catch (err) {
-      setStorefrontTrackingError(language === 'AR' ? 'حدث خطأ شبكة غير متوقع.' : 'An unexpected network error occurred.');
+      // Local Storage Offline fallback lookup
+      const localOrders = getSavedItem('aldhibani_local_orders', DEFAULT_ORDERS);
+      const found = localOrders.find((o: any) => o.id.toUpperCase() === storefrontTrackingId.trim().toUpperCase());
+      if (found) {
+        setStorefrontTrackedOrder(found);
+      } else {
+        setStorefrontTrackingError(language === 'AR'
+          ? 'لم نجد أي طلب بهذا الرقم المرجعي المعطى. رجاءً تأكد من صحة رقم الطلب وأعد البحث.'
+          : 'Order tracking ID not found. Please check and try again.'
+        );
+      }
     } finally {
       setStorefrontIsSearching(false);
     }
@@ -120,23 +123,30 @@ export default function App() {
   // Fetch initial storefront definitions
   const fetchStorefrontData = async () => {
     try {
+      const configPromise = fetch('/api/config').catch(() => null);
+      const productsPromise = fetch('/api/products').catch(() => null);
+      const categoriesPromise = fetch('/api/categories').catch(() => null);
+
       const [configRes, productsRes, categoriesRes] = await Promise.all([
-        fetch('/api/config'),
-        fetch('/api/products'),
-        fetch('/api/categories').catch(() => null)
+        configPromise,
+        productsPromise,
+        categoriesPromise
       ]);
 
-      if (configRes.ok) {
+      if (configRes && configRes.ok) {
         const confData = await configRes.json();
         setConfig(confData);
+        saveItem('aldhibani_local_config', confData);
       }
-      if (productsRes.ok) {
+      if (productsRes && productsRes.ok) {
         const prodData = await productsRes.json();
         setProducts(prodData);
+        saveItem('aldhibani_local_products', prodData);
       }
       if (categoriesRes && categoriesRes.ok) {
         const catData = await categoriesRes.json();
         setCategories(catData);
+        saveItem('aldhibani_local_categories', catData);
       }
     } catch (e) {
       console.error("Failed syncing frontend states: ", e);
@@ -300,6 +310,12 @@ export default function App() {
                 onConfigChanged={(updated) => setConfig(updated)}
                 categories={categories}
                 onCategoriesChanged={(updated) => setCategories(updated)}
+                products={products}
+                onProductsChanged={(updated) => {
+                  setProducts(updated);
+                  saveItem('aldhibani_local_products', updated);
+                }}
+                onClose={() => setIsAdminView(false)}
               />
             ) : (
               /* Shopper Catalog Grid View */
@@ -399,16 +415,142 @@ export default function App() {
                           
                           {/* Left layout column: Order Status, Progress timeline steps */}
                           <div className="lg:col-span-7 space-y-5 text-right">
-                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-950/65 border border-slate-900 p-4 rounded-2xl">
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-950/65 border border-slate-900 p-4 rounded-2xl animate-fadeIn">
                               <div className="flex flex-col gap-0.5">
                                 <span className="text-[10px] text-slate-500 font-mono tracking-wider">ORDER REFERENCE CODE</span>
-                                <span className="text-base font-mono font-black text-cyan-400 uppercase tracking-widest">{storefrontTrackedOrder.id}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-base font-mono font-black text-cyan-400 uppercase tracking-widest">{storefrontTrackedOrder.id}</span>
+                                  
+                                  {/* 🔮 PREMIUM INVOICE PRINTER ICON BUTTON */}
+                                  <button
+                                    onClick={() => window.print()}
+                                    className="p-1.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-850 hover:border-cyan-500 border border-slate-800 text-cyan-400 hover:text-white transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider shadow-md"
+                                    id="btn-print-order-tracking"
+                                    title={language === 'AR' ? 'طباعة فاتورة تتبع الطلب الكلية' : 'Print Invoice Receipt Record'}
+                                  >
+                                    <Printer className="w-3.5 h-3.5 text-cyan-400" />
+                                    <span>{language === 'AR' ? 'طباعة الفاتورة' : 'Print Receipt'}</span>
+                                  </button>
+                                </div>
                               </div>
                               <div className="flex items-center gap-2.5 bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl shadow-md">
                                 {getStorefrontStatusIcon(storefrontTrackedOrder.status)}
                                 <span className="text-xs font-black text-slate-100 font-sans">
                                   {getStorefrontStatusLabel(storefrontTrackedOrder.status)}
                                 </span>
+                              </div>
+                            </div>
+
+                            {/* 🖨️ DETAILED PRINT-ONLY INVOICE COMPONENT (Rendered strictly by print engine) */}
+                            <div id="printable-order-invoice-area" className="hidden print:block text-slate-900 bg-white" dir={language === 'AR' ? 'rtl' : 'ltr'}>
+                              <div className="text-center pb-4 border-b-2 border-dashed border-slate-900">
+                                <h1 className="text-lg font-black tracking-wide">{config.shopNameAR || 'مستودع الذيباني الفاخر VIP'}</h1>
+                                <h2 className="text-xs font-bold text-slate-800">{config.shopNameEN || 'Aldhibani VIP Luxury Merchant'}</h2>
+                                <p className="text-[9px] text-slate-600 mt-1">سجل التتبع اللوجستي وشحن الباقات الرقمية بالريال اليمني YER</p>
+                              </div>
+
+                              <div className="text-center py-2.5">
+                                <h3 className="text-xs font-black tracking-wider">سند شحن وتتبع حالة طلب / DISPATCH INVOICE RECORD</h3>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-y-2.5 text-xs py-3 border-t border-b border-dashed border-slate-900">
+                                <div>
+                                  <span className="font-extrabold">رقم الفاتورة المرجعي:</span> <span className="font-mono">{storefrontTrackedOrder.id}</span>
+                                </div>
+                                <div className="text-left font-mono">
+                                  <strong>Invoice ID:</strong> {storefrontTrackedOrder.id}
+                                </div>
+
+                                <div>
+                                  <span className="font-extrabold">تاريخ السند:</span> <span>{new Date(storefrontTrackedOrder.createdAt).toLocaleString('ar-YE')}</span>
+                                </div>
+                                <div className="text-left font-mono">
+                                  <strong>Date:</strong> {new Date(storefrontTrackedOrder.createdAt).toLocaleString('en-US')}
+                                </div>
+
+                                <div>
+                                  <span className="font-extrabold">العميل المستلم:</span> <span>{storefrontTrackedOrder.customerName}</span>
+                                </div>
+                                <div className="text-left">
+                                  <strong>Customer:</strong> {storefrontTrackedOrder.customerName}
+                                </div>
+
+                                <div>
+                                  <span className="font-extrabold">رقم الاتصال:</span> <span className="font-mono">{storefrontTrackedOrder.customerPhone}</span>
+                                </div>
+                                <div className="text-left font-mono">
+                                  <strong>Phone:</strong> {storefrontTrackedOrder.customerPhone}
+                                </div>
+
+                                <div>
+                                  <span className="font-extrabold">طريقة سداد الدفع:</span> <span>{storefrontTrackedOrder.paymentMethod}</span>
+                                </div>
+                                <div className="text-left">
+                                  <strong>Payment:</strong> {storefrontTrackedOrder.paymentMethod}
+                                </div>
+
+                                <div>
+                                  <span className="font-extrabold">منفذ الصندوق المصرفي:</span> <span className="font-mono">{storefrontTrackedOrder.cashierId}</span>
+                                </div>
+                                <div className="text-left font-mono">
+                                  <strong>Drawer ID:</strong> {storefrontTrackedOrder.cashierId}
+                                </div>
+
+                                <div>
+                                  <span className="font-extrabold">حالة المعالجة الحالية:</span> <span className="font-extrabold underline">{getStorefrontStatusLabel(storefrontTrackedOrder.status)}</span>
+                                </div>
+                                <div className="text-left">
+                                  <strong>Status:</strong> {storefrontTrackedOrder.status}
+                                </div>
+                              </div>
+
+                              {/* Item list */}
+                              <div className="py-4">
+                                <h4 className="text-xs font-black mb-2 border-b border-slate-900 pb-1">تفاصيل السلع والمشتريات / ORDERED PACKAGES SUMMARY</h4>
+                                <table className="w-full text-xs text-right border-collapse">
+                                  <thead>
+                                    <tr className="border-b border-slate-900 text-[10px]">
+                                      <th className="py-1 text-right">السلعة / الخدمة (Description)</th>
+                                      <th className="py-1 text-center">الكمية (Qty)</th>
+                                      <th className="py-1 text-left">القيمة (Total YER)</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {storefrontTrackedOrder.items.map((item: any, idx: number) => (
+                                      <tr key={idx} className="border-b border-dashed border-slate-200">
+                                        <td className="py-1.5 font-bold">
+                                          {language === 'AR' ? item.product.nameAR : item.product.nameEN}
+                                          {item.rechargeDetails?.phoneNumber && (
+                                            <div className="text-[9px] text-slate-700 font-mono">Mobile Target: {item.rechargeDetails.phoneNumber}</div>
+                                          )}
+                                          {item.rechargeDetails?.playerId && (
+                                            <div className="text-[9px] text-slate-700 font-mono">Gaming Player ID: {item.rechargeDetails.playerId}</div>
+                                          )}
+                                        </td>
+                                        <td className="py-1.5 text-center font-mono">{item.quantity}</td>
+                                        <td className="py-1.5 text-left font-mono font-bold">{(item.product.priceYER * item.quantity).toLocaleString()} YER</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {/* Total Price */}
+                              <div className="border-t-2 border-dashed border-slate-900 pt-3 flex justify-between items-center text-xs font-black">
+                                <span>القيمة الإجمالية الفاتورة بالريال اليمني (YER):</span>
+                                <span className="font-mono text-sm border border-slate-900 px-3 py-1 bg-slate-50">{storefrontTrackedOrder.totalYER.toLocaleString()} YER</span>
+                              </div>
+
+                              {storefrontTrackedOrder.notes && (
+                                <div className="mt-4 p-3 border border-slate-900 rounded bg-slate-50 text-[10px] space-y-1">
+                                  <span className="font-extrabold block text-slate-700">ملاحظات وتوجيهات الشحن والتسليم:</span>
+                                  <p>{storefrontTrackedOrder.notes}</p>
+                                </div>
+                              )}
+
+                              <div className="text-center pt-8 mt-8 border-t border-dashed border-slate-500 text-[9px] text-slate-600 space-y-1">
+                                <p className="font-black">مستودع الذيباني الفخم VIP - الريال اليمني مستقر للجمهور الكريم.</p>
+                                <p>شكراً لثقتكم الغالية بنا. تم استخراج وطباعة هذا السند بنجاح سحابياً.</p>
                               </div>
                             </div>
 
