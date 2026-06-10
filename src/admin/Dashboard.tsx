@@ -4,17 +4,17 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Building, ShieldCheck, Users, Box, TrendingUp, AlertCircle, Edit3, Save, 
   Handshake, DollarSign, ListOrdered, ToggleLeft, ToggleRight, Check, CheckCircle2, RefreshCw,
   Plus, Trash2, Sparkles, Search, ClipboardList, Clock, Truck, X, FileText, Phone, User, HelpCircle, Layers, Printer,
-  Wifi, Cloud, Cpu, Database, Link, Bot, MapPin, Terminal, Key
+  Wifi, Cloud, Cpu, Database, Link, Bot, MapPin, Terminal, Key, Sliders
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell 
 } from 'recharts';
-import { StaffUser, StoreConfig, Product, Order, DebtRecord, Language, CustomCategory, Organization, Branch, InventoryTransaction } from '../types';
+import { StaffUser, StoreConfig, Product, Order, DebtRecord, Language, CustomCategory, Organization, Branch, InventoryTransaction, Banner } from '../types';
 import { 
   getSavedItem, saveItem, 
   DEFAULT_STORE_CONFIG, DEFAULT_CATEGORIES, DEFAULT_PRODUCTS, DEFAULT_ORDERS, DEFAULT_DEBTS 
@@ -32,6 +32,8 @@ interface DashboardProps {
   onClose?: () => void;
   products?: Product[];
   onProductsChanged?: (products: Product[]) => void;
+  banners?: Banner[];
+  onBannersChanged?: (banners: Banner[]) => void;
 }
 
 export default function Dashboard({
@@ -44,7 +46,9 @@ export default function Dashboard({
   onCategoriesChanged,
   onClose,
   products: initialProductsProp = [],
-  onProductsChanged
+  onProductsChanged,
+  banners = [],
+  onBannersChanged
 }: DashboardProps) {
   // Tabs: 'ANALYTICS' | 'SETTINGS' | 'INVENTORY' | 'STAFF' | 'DEBTS' | 'ORDERS' | 'CATEGORIES' | 'AI_CHAT' | 'DEVELOPER_PLATFORM' | 'CHANGE_PASSWORD'
   const [activeTab, setActiveTab] = useState<'ANALYTICS' | 'SETTINGS' | 'INVENTORY' | 'STAFF' | 'DEBTS' | 'ORDERS' | 'CATEGORIES' | 'AI_CHAT' | 'DEVELOPER_PLATFORM' | 'CHANGE_PASSWORD'>('ANALYTICS');
@@ -130,6 +134,16 @@ export default function Dashboard({
   const [boxDescEN, setBoxDescEN] = useState('');
   const [showBoxForm, setShowBoxForm] = useState(false);
 
+  // --- Banner Manager States ---
+  const [editingBannerId, setEditingBannerId] = useState<string | null>(null);
+  const [bTitleAr, setBTitleAr] = useState('');
+  const [bTitleEn, setBTitleEn] = useState('');
+  const [bImageUrl, setBImageUrl] = useState('');
+  const [bTargetUrl, setBTargetUrl] = useState('');
+  const [bIsActive, setBIsActive] = useState(true);
+  const [bSortOrder, setBSortOrder] = useState(0);
+  const [showBannerForm, setShowBannerForm] = useState(false);
+
   // External Integration & Sync Simulation States
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
@@ -148,6 +162,18 @@ export default function Dashboard({
   // Enhanced Form states for full Product CRUD
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [fullEditingProduct, setFullEditingProduct] = useState<Product | null>(null);
+  
+  // AI Image generation loading and pending approval states
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [pendingAiSuggestion, setPendingAiSuggestion] = useState<string | null>(null);
+  const [aiSuggestionsBatchStatus, setAiSuggestionsBatchStatus] = useState<{ current: number; total: number; active: boolean }>({ current: 0, total: 0, active: false });
+  
+  const [batchActive, setBatchActive] = useState(false);
+  const [batchMissingProducts, setBatchMissingProducts] = useState<Product[]>([]);
+  const [batchCurrentIndex, setBatchCurrentIndex] = useState(0);
+  const [batchCurrentSuggested, setBatchCurrentSuggested] = useState<string | null>(null);
+  const [batchLoading, setBatchLoading] = useState(false);
+
   const [productForm, setProductForm] = useState<{
     id: string;
     nameAR: string;
@@ -158,6 +184,9 @@ export default function Dashboard({
     brand: string;
     priceYER: number;
     imageUrl: string;
+    product_image_url: string;
+    is_ai_suggested: boolean;
+    ai_suggested_url: string;
     isAvailable: boolean;
     stock: number;
     rechargeAmount: string;
@@ -171,6 +200,9 @@ export default function Dashboard({
     brand: '',
     priceYER: 1000,
     imageUrl: '',
+    product_image_url: '',
+    is_ai_suggested: false,
+    ai_suggested_url: '',
     isAvailable: true,
     stock: 50,
     rechargeAmount: ''
@@ -247,6 +279,151 @@ export default function Dashboard({
   const [manualPendingCash, setManualPendingCash] = useState<string>('');
   const [manualSettledCash, setManualSettledCash] = useState<string>('');
   const [manualExpectedLedger, setManualExpectedLedger] = useState<string>('');
+
+  // 🧙‍♂️ Guided Integration Wizard States (Friendly Merchant Flow)
+  const [wizardStep, setWizardStep] = useState<number>(() => {
+    const savedStep = localStorage.getItem('import_wizard_step');
+    return savedStep ? Number(savedStep) : 1;
+  });
+  const [selectedSource, setSelectedSource] = useState<string>(() => {
+    return localStorage.getItem('import_wizard_source') || 'mohaseb';
+  });
+  const [selectedMethod, setSelectedMethod] = useState<string>(() => {
+    return localStorage.getItem('import_wizard_method') || 'backup';
+  });
+  const [wizardBackupFileName, setWizardBackupFileName] = useState<string>(() => {
+    return localStorage.getItem('import_wizard_backup_filename') || '';
+  });
+  const [wizardGdriveEmail, setWizardGdriveEmail] = useState<string>(() => {
+    return localStorage.getItem('import_wizard_gdrive_email') || '';
+  });
+  const [wizardGdriveLink, setWizardGdriveLink] = useState<string>(() => {
+    return localStorage.getItem('import_wizard_gdrive_link') || '';
+  });
+  const [isWizardAnalyzing, setIsWizardAnalyzing] = useState<boolean>(false);
+  const [wizardAnalysisResult, setWizardAnalysisResult] = useState<any>(() => {
+    const saved = localStorage.getItem('import_wizard_analysis');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [wizardFieldMappings, setWizardFieldMappings] = useState<Record<string, string>>({
+    name: 'products.name_ar',
+    price: 'products.price_yer',
+    stock: 'products.stock',
+    category: 'products.category'
+  });
+  const [wizardSyncFrequency, setWizardSyncFrequency] = useState<string>(() => {
+    return localStorage.getItem('import_wizard_sync_freq') || 'hourly';
+  });
+  const [isWizardAutoSync, setIsWizardAutoSync] = useState<boolean>(() => {
+    return localStorage.getItem('import_wizard_auto_sync') === 'true';
+  });
+  const [wizardAdvancedMode, setWizardAdvancedMode] = useState<boolean>(false);
+
+  // Helper functions for Guided Integration Wizard (Merchant-friendly)
+  const saveWizardProgress = (stepToSave?: number) => {
+    const s = stepToSave !== undefined ? stepToSave : wizardStep;
+    localStorage.setItem('import_wizard_step', String(s));
+    localStorage.setItem('import_wizard_source', selectedSource);
+    localStorage.setItem('import_wizard_method', selectedMethod);
+    localStorage.setItem('import_wizard_backup_filename', wizardBackupFileName);
+    localStorage.setItem('import_wizard_gdrive_email', wizardGdriveEmail);
+    localStorage.setItem('import_wizard_gdrive_link', wizardGdriveLink);
+    localStorage.setItem('import_wizard_sync_freq', wizardSyncFrequency);
+    localStorage.setItem('import_wizard_auto_sync', String(isWizardAutoSync));
+    if (wizardAnalysisResult) {
+      localStorage.setItem('import_wizard_analysis', JSON.stringify(wizardAnalysisResult));
+    } else {
+      localStorage.removeItem('import_wizard_analysis');
+    }
+  };
+
+  const resetWizardState = () => {
+    localStorage.removeItem('import_wizard_step');
+    localStorage.removeItem('import_wizard_source');
+    localStorage.removeItem('import_wizard_method');
+    localStorage.removeItem('import_wizard_backup_filename');
+    localStorage.removeItem('import_wizard_gdrive_email');
+    localStorage.removeItem('import_wizard_gdrive_link');
+    localStorage.removeItem('import_wizard_analysis');
+    localStorage.removeItem('import_wizard_sync_freq');
+    localStorage.removeItem('import_wizard_auto_sync');
+
+    setWizardStep(1);
+    setSelectedSource('mohaseb');
+    setSelectedMethod('backup');
+    setWizardBackupFileName('');
+    setWizardGdriveEmail('');
+    setWizardGdriveLink('');
+    setWizardAnalysisResult(null);
+    setWizardSyncFrequency('hourly');
+    setIsWizardAutoSync(false);
+  };
+
+  const handleWizardNext = () => {
+    if (wizardStep === 3) {
+      setIsWizardAnalyzing(true);
+      setWizardAnalysisResult(null);
+      setTimeout(() => {
+        const result = {
+          productsCount: selectedSource === 'excel' ? 82 : selectedSource === 'android' ? 120 : 314,
+          categoriesCount: selectedSource === 'excel' ? 4 : selectedSource === 'android' ? 6 : 11,
+          customersCount: selectedSource === 'excel' ? 12 : selectedSource === 'android' ? 24 : 68,
+          debtsCount: selectedSource === 'excel' ? 5 : selectedSource === 'android' ? 14 : 29,
+          inventoryCount: selectedSource === 'excel' ? 1500 : selectedSource === 'android' ? 3400 : 8900,
+          readinessStatus: 'success',
+          readinessReport: language === 'AR' 
+            ? 'متوافق وجاهز للاستيراد 🟢 - تم فك شفرة قاعدة البيانات وفحص ترويسات الصلاحية بنجاح بنسبة 100%.'
+            : '100% Consistent & Tested 🟢 - File headers matched, column counts validated successfully.'
+        };
+        setWizardAnalysisResult(result);
+        setIsWizardAnalyzing(false);
+        localStorage.setItem('import_wizard_analysis', JSON.stringify(result));
+      }, 1500);
+    }
+    
+    const nextStep = Math.min(wizardStep + 1, 7);
+    setWizardStep(nextStep);
+    localStorage.setItem('import_wizard_step', String(nextStep));
+    
+    // Auto-update config representation
+    let integrationTypeToSave: 'ANDROID' | 'WEB' | 'DESKTOP' | 'EXCEL' = 'ANDROID';
+    if (selectedSource === 'android') integrationTypeToSave = 'ANDROID';
+    else if (selectedSource === 'excel') integrationTypeToSave = 'EXCEL';
+    else if (selectedSource === 'custom' || selectedSource === 'odoo') integrationTypeToSave = 'WEB';
+    else integrationTypeToSave = 'DESKTOP';
+
+    const updated = {
+      ...config,
+      integrationType: integrationTypeToSave,
+    };
+    setConfig(updated);
+    onConfigChanged(updated);
+    saveItem('aldhibani_local_config', updated);
+
+    saveWizardProgress(nextStep);
+  };
+
+  const handleWizardPrev = () => {
+    const prevStep = Math.max(wizardStep - 1, 1);
+    setWizardStep(prevStep);
+    localStorage.setItem('import_wizard_step', String(prevStep));
+    saveWizardProgress(prevStep);
+  };
+
+  const handleGdriveLinkChange = (val: string) => {
+    setWizardGdriveLink(val);
+    localStorage.setItem('import_wizard_gdrive_link', val);
+    
+    // Automatically extract folder identifier
+    const match = val.match(/\/folders\/([a-zA-Z0-9-_]{25,50})/) || val.match(/id=([a-zA-Z0-9-_]{25,50})/);
+    if (match && match[1]) {
+      const extractedId = match[1];
+      const updated = { ...config, remoteGDriveFolderId: extractedId };
+      setConfig(updated);
+      onConfigChanged(updated);
+      saveItem('aldhibani_local_config', updated);
+    }
+  };
 
   // Fetch all databases from Serverless Database (Supabase Client Wrapper authority)
   const refreshAllData = async () => {
@@ -416,6 +593,73 @@ export default function Dashboard({
     saveItem('aldhibani_local_config', config);
     onConfigChanged(config);
     alert(language === 'AR' ? 'تم حفظ تكوينات المتجر محلياً بنجاح!' : 'Store custom settings saved locally successfully!');
+  };
+
+  // --- Banner Slider Management Handlers ---
+  const handleSaveBanner = (e: React.FormEvent) => {
+    e.preventDefault();
+    const storeOrgId = config.orgId || 'org-dhibani-vip';
+    
+    const targetBanner: Banner = {
+      id: editingBannerId || `ban-${Date.now()}`,
+      organization_id: storeOrgId,
+      title_ar: bTitleAr,
+      title_en: bTitleEn,
+      image_url: bImageUrl || 'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=800&q=80',
+      target_url: bTargetUrl,
+      is_active: bIsActive,
+      sort_order: Number(bSortOrder) || 0
+    };
+
+    const updatedList = SupabaseServerlessDB.saveBanner(targetBanner);
+    if (onBannersChanged) {
+      onBannersChanged(updatedList);
+    }
+    
+    // reset form states
+    setEditingBannerId(null);
+    setBTitleAr('');
+    setBTitleEn('');
+    setBImageUrl('');
+    setBTargetUrl('');
+    setBIsActive(true);
+    setBSortOrder(0);
+    setShowBannerForm(false);
+    
+    alert(language === 'AR' ? 'تم حفظ شريحة البانر الإعلاني بنجاح!' : 'Ad banner slide saved successfully!');
+  };
+
+  const handleDeleteBanner = (id: string) => {
+    if (!window.confirm(language === 'AR' ? 'هل أنت متأكد من رغبتك في حذف هذا البانر نهائياً؟' : 'Are you sure you want to permanently delete this banner?')) {
+      return;
+    }
+    const updatedList = SupabaseServerlessDB.deleteBanner(id);
+    if (onBannersChanged) {
+      onBannersChanged(updatedList);
+    }
+    alert(language === 'AR' ? 'تم حذف البانر بنجاح!' : 'Banner deleted successfully!');
+  };
+
+  const handleEditBannerFormOpen = (banner: Banner) => {
+    setEditingBannerId(banner.id);
+    setBTitleAr(banner.title_ar);
+    setBTitleEn(banner.title_en);
+    setBImageUrl(banner.image_url);
+    setBTargetUrl(banner.target_url || '');
+    setBIsActive(banner.is_active);
+    setBSortOrder(banner.sort_order);
+    setShowBannerForm(true);
+  };
+
+  const handleNewBannerFormOpen = () => {
+    setEditingBannerId(null);
+    setBTitleAr('');
+    setBTitleEn('');
+    setBImageUrl('');
+    setBTargetUrl('');
+    setBIsActive(true);
+    setBSortOrder(0);
+    setShowBannerForm(true);
   };
 
   // Trigger Remote AnyDesk-Alternative Synchronization Simulation
@@ -794,6 +1038,9 @@ export default function Dashboard({
       brand: productForm.brand,
       priceYER: Number(productForm.priceYER),
       imageUrl: productForm.imageUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe',
+      product_image_url: productForm.product_image_url,
+      is_ai_suggested: productForm.is_ai_suggested,
+      ai_suggested_url: productForm.ai_suggested_url,
       isAvailable: productForm.isAvailable,
       stock: Number(productForm.stock),
       rechargeAmount: productForm.rechargeAmount
@@ -817,6 +1064,7 @@ export default function Dashboard({
 
       setIsAddingProduct(false);
       setFullEditingProduct(null);
+      setPendingAiSuggestion(null);
       setProductForm({
         id: '',
         nameAR: '',
@@ -827,6 +1075,9 @@ export default function Dashboard({
         brand: '',
         priceYER: 1000,
         imageUrl: '',
+        product_image_url: '',
+        is_ai_suggested: false,
+        ai_suggested_url: '',
         isAvailable: true,
         stock: 50,
         rechargeAmount: ''
@@ -873,6 +1124,123 @@ export default function Dashboard({
       alert('Error deleting product');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Start the batch generation process for missing product images
+  const handleStartBatchImages = () => {
+    // Find products where product_image_url is missing, empty, or fallback
+    const missing = products.filter(p => !p.product_image_url || p.product_image_url.trim() === '');
+    if (missing.length === 0) {
+      alert(language === 'AR' 
+        ? 'كل المنتجات تمتلك صورة توضيحية رسمية بالفعل! لا توجد منتجات بناقص صور.' 
+        : 'All products currently have official images. No missing images found!');
+      return;
+    }
+
+    setBatchMissingProducts(missing);
+    setBatchCurrentIndex(0);
+    setBatchActive(true);
+    setBatchCurrentSuggested(null);
+    triggerBatchItemSuggest(missing[0]);
+  };
+
+  // Trigger individual API suggestion inside the batch
+  const triggerBatchItemSuggest = async (prod: Product) => {
+    if (!prod) return;
+    setBatchLoading(true);
+    setBatchCurrentSuggested(null);
+
+    try {
+      const response = await fetch('/api/gemini/suggest-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nameAR: prod.nameAR,
+          nameEN: prod.nameEN || prod.nameAR,
+          category: prod.category,
+          descriptionAR: prod.descriptionAR || '',
+          descriptionEN: prod.descriptionEN || ''
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.imageUrl) {
+          setBatchCurrentSuggested(data.imageUrl);
+        } else {
+          // If suggestion failed, we can use an auto fallback seed
+          const safeSeed = encodeURIComponent((prod.nameEN || prod.nameAR || 'batch').toLowerCase().replace(/\s+/g, '-'));
+          setBatchCurrentSuggested(`https://picsum.photos/seed/${safeSeed}/600/450`);
+        }
+      } else {
+        const safeSeed = encodeURIComponent((prod.nameEN || prod.nameAR || 'batch').toLowerCase().replace(/\s+/g, '-'));
+        setBatchCurrentSuggested(`https://picsum.photos/seed/${safeSeed}/600/450`);
+      }
+    } catch (err) {
+      console.error("Batch image list suggest item failure:", err);
+      const safeSeed = encodeURIComponent((prod.nameEN || prod.nameAR || 'batch').toLowerCase().replace(/\s+/g, '-'));
+      setBatchCurrentSuggested(`https://picsum.photos/seed/${safeSeed}/600/450`);
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  // Handle Approve/Save current batch item
+  const handleApproveBatchItem = async () => {
+    if (!batchCurrentSuggested) return;
+    const currentProd = batchMissingProducts[batchCurrentIndex];
+    if (!currentProd) return;
+
+    const updatedProd: Product = {
+      ...currentProd,
+      product_image_url: batchCurrentSuggested,
+      is_ai_suggested: true, // yes, AI recommended
+      ai_suggested_url: batchCurrentSuggested
+    };
+
+    try {
+      // 1. Instantly save in our serverless database
+      SupabaseServerlessDB.saveProduct(updatedProd);
+
+      // 2. Background POST backup
+      try {
+        await fetch('/api/products', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': authToken || ''
+          },
+          body: JSON.stringify(updatedProd)
+        }).catch(() => null);
+      } catch { }
+
+      // Proceed to next
+      moveToNextBatchItem();
+    } catch (err) {
+      alert("Error saving batch item image");
+    }
+  };
+
+  // Skip current batch item and proceed
+  const handleSkipBatchItem = () => {
+    moveToNextBatchItem();
+  };
+
+  // Move to next or complete
+  const moveToNextBatchItem = () => {
+    const nextIdx = batchCurrentIndex + 1;
+    if (nextIdx >= batchMissingProducts.length) {
+      alert(language === 'AR' 
+        ? 'تم الانتهاء بنجاح من مراجعة غلاف جميع المنتجات الناقصة!' 
+        : 'All missing items reviewed and updated successfully!');
+      setBatchActive(false);
+      setBatchMissingProducts([]);
+      refreshAllData();
+    } else {
+      setBatchCurrentIndex(nextIdx);
+      setBatchCurrentSuggested(null);
+      triggerBatchItemSuggest(batchMissingProducts[nextIdx]);
     }
   };
 
@@ -1280,9 +1648,22 @@ export default function Dashboard({
         })
       });
 
-      const data = await response.json();
+      const responseText = await response.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseErr) {
+        throw new Error(language === 'AR' ? 'فشل الاتصال بالخادم.' : 'Server communication failed.');
+      }
+
       if (!response.ok) {
-        setPasswordStatusMsg(language === 'AR' ? (data.error || 'حدث خطأ ما') : (data.error || 'Password update failed'));
+        let errorMsg = data.error || 'Password update failed';
+        if (errorMsg.includes('كلمة المرور الحالية غير صحيحة')) {
+          errorMsg = language === 'AR' ? 'كلمة المرور الحالية غير صحيحة.' : 'Current password is incorrect.';
+        } else if (errorMsg.includes('قصيرة جداً')) {
+          errorMsg = language === 'AR' ? 'كلمة المرور الجديدة قصيرة.' : 'New password is too short.';
+        }
+        setPasswordStatusMsg(errorMsg);
         setLoading(false);
         return;
       }
@@ -1291,12 +1672,12 @@ export default function Dashboard({
       const updatedStaff = SupabaseServerlessDB.saveStaffPassword(currentUser.id, newPass);
       setStaffList(updatedStaff);
 
-      setPasswordSuccessMsg(language === 'AR' ? 'تم تغيير كلمة المرور بنجاح تام!' : 'Password updated successfully!');
+      setPasswordSuccessMsg(language === 'AR' ? 'تم تغيير كلمة المرور بنجاح.' : 'Password changed successfully.');
       setCurrentPass('');
       setNewPass('');
       setConfirmPass('');
     } catch (err: any) {
-      setPasswordStatusMsg(err.message || 'Error occurred');
+      setPasswordStatusMsg(language === 'AR' ? 'فشل الاتصال بالخادم.' : (err.message || 'Error occurred'));
     } finally {
       setLoading(false);
     }
@@ -3668,6 +4049,239 @@ export default function Dashboard({
             </form>
           </div>
 
+          {/* 🖼️ HERO BANNER SLIDESHOW CONFIGURATOR PANEL */}
+          <div className="bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl max-w-3xl mt-6 animate-fadeIn text-right font-sans" dir="rtl">
+            <div className="flex items-center justify-between gap-4 border-b border-slate-850 pb-4 mb-5">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-cyan-950 text-cyan-400 rounded-xl border border-cyan-850">
+                  <Sliders className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                    {language === 'AR' ? 'إدارة شرائح البانر والواجهة المتحركة' : 'Hero Banner Slider Workspace'}
+                  </h3>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    {language === 'AR' ? 'تخصيص العروض الترويجية المصورة المصاحبة لشعار متجرك' : 'Style and sequence visual slides for top header placements'}
+                  </p>
+                </div>
+              </div>
+
+              {!showBannerForm && (
+                <button
+                  type="button"
+                  onClick={handleNewBannerFormOpen}
+                  className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all hover:shadow-lg shadow-cyan-500/10 active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{language === 'AR' ? 'إضافة شريحة عرض' : 'New Ad Slide'}</span>
+                </button>
+              )}
+            </div>
+
+            {/* Slide Creation & Update Form */}
+            {showBannerForm && (
+              <motion.form
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                onSubmit={handleSaveBanner}
+                className="bg-slate-950/60 p-5 rounded-2xl border border-slate-850 space-y-4 mb-6"
+              >
+                <div className="flex justify-between items-center border-b border-slate-850/60 pb-3">
+                  <span className="text-xs font-black text-white">
+                    {editingBannerId 
+                      ? (language === 'AR' ? 'تعديل بيانات الشريحة الإعلانية' : 'Edit Slideshow Banner')
+                      : (language === 'AR' ? 'إنشاء شريحة عرض جديدة' : 'Add Slideshow Banner')
+                    }
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowBannerForm(false)}
+                    className="p-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs text-slate-450 font-bold">{language === 'AR' ? 'العنوان الترويجي (عربي):' : 'Promo Title (AR):'}</label>
+                    <input
+                      type="text"
+                      required
+                      value={bTitleAr}
+                      onChange={(e) => setBTitleAr(e.target.value)}
+                      placeholder={language === 'AR' ? 'مثال: خصم 50% على الشواحن والسماعات' : 'e.g. 50% Off' }
+                      className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white text-right focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs text-slate-450 font-bold">{language === 'AR' ? 'العنوان الترويجي (إنجليزي):' : 'Promo Title (EN):'}</label>
+                    <input
+                      type="text"
+                      required
+                      value={bTitleEn}
+                      onChange={(e) => setBTitleEn(e.target.value)}
+                      placeholder="e.g. Premium Accessories Stock"
+                      className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white text-left focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs text-slate-450 font-bold">{language === 'AR' ? 'رابط صنف/رابط الاستهداف (اختياري):' : 'Target/Destination URL (Optional):'}</label>
+                    <input
+                      type="text"
+                      value={bTargetUrl}
+                      onChange={(e) => setBTargetUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white text-left focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs text-slate-450 font-bold">{language === 'AR' ? 'ترتيب الظهور (الرقم الأصغر أولاً):' : 'Sort Order Index:'}</label>
+                    <input
+                      type="number"
+                      required
+                      value={bSortOrder}
+                      onChange={(e) => setBSortOrder(Number(e.target.value))}
+                      className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white font-mono text-center focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs text-slate-450 font-bold">{language === 'AR' ? 'رابط الصورة الإعلانية (ImageUrl):' : 'Banner Image URL:'}</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      required
+                      value={bImageUrl}
+                      onChange={(e) => setBImageUrl(e.target.value)}
+                      placeholder="https://images.unsplash.com/promo..."
+                      className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white text-left focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                </div>
+
+                {bImageUrl && (
+                  <div className="border border-slate-850 p-2.5 rounded-xl bg-slate-950">
+                    <span className="text-[9px] text-slate-500 block mb-1">{language === 'AR' ? 'تحميل معاينة الصورة المباشرة:' : 'Live Render Thumbnail Preview:'}</span>
+                    <img
+                      src={bImageUrl}
+                      alt="Banner Preview"
+                      className="w-full h-24 md:h-32 object-cover rounded-lg border border-slate-800"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80';
+                      }}
+                    />
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-900">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-slate-300">{language === 'AR' ? 'تفعيل الشريحة فوراً:' : 'Enable Slide Immediately:'}</label>
+                    <button
+                      type="button"
+                      onClick={() => setBIsActive(!bIsActive)}
+                      className="text-cyan-400 hover:text-cyan-300 cursor-pointer"
+                    >
+                      {bIsActive ? (
+                        <ToggleRight className="w-8 h-8" />
+                      ) : (
+                        <ToggleLeft className="w-8 h-8 text-slate-600" />
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowBannerForm(false)}
+                      className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-400 text-xs font-black cursor-pointer"
+                    >
+                      {language === 'AR' ? 'إلغاء' : 'Cancel'}
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 rounded-xl bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-black cursor-pointer shadow-lg active:scale-97"
+                    >
+                      {language === 'AR' ? 'حفظ الشريحة 💾' : 'Lock Slide 💾'}
+                    </button>
+                  </div>
+                </div>
+              </motion.form>
+            )}
+
+            {/* Slides list */}
+            <div className="space-y-3">
+              {banners.filter(b => b.organization_id === (config.orgId || 'org-dhibani-vip')).length === 0 ? (
+                <div className="py-10 text-center text-slate-500 text-xs border border-dashed border-slate-850 rounded-2xl">
+                  {language === 'AR' ? 'لا يوجد أي شرائح عرض مخصصة مضافة حالياً. يمكنك استخدام الشرائح الافتراضية.' : 'No custom slides registered for this branch. Using global fallbacks.'}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {banners
+                    .filter(b => b.organization_id === (config.orgId || 'org-dhibani-vip'))
+                    .sort((a, b) => a.sort_order - b.sort_order)
+                    .map((banner) => (
+                      <div
+                        key={banner.id}
+                        className="p-3 bg-slate-950/70 border border-slate-850 rounded-2xl flex gap-3.5 items-center justify-between"
+                      >
+                        <div className="flex gap-3 items-center min-w-0 flex-grow">
+                          <img
+                            src={banner.image_url}
+                            alt={banner.title_ar}
+                            className="w-16 h-12 rounded-lg object-cover border border-slate-800 shrink-0"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="text-right min-w-0">
+                            <span className="block font-black text-xs text-white truncate">
+                              {language === 'AR' ? banner.title_ar : banner.title_en}
+                            </span>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className={`text-[8.5px] px-1.5 py-0.5 rounded-md font-bold uppercase ${
+                                banner.is_active 
+                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                                  : 'bg-slate-900 text-slate-500 border border-slate-800'
+                              }`}>
+                                {banner.is_active ? (language === 'AR' ? 'نشط' : 'Active') : (language === 'AR' ? 'معطل' : 'Off')}
+                              </span>
+                              <span className="text-[9px] text-slate-500 font-mono">
+                                Sort: {banner.sort_order}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Controls */}
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleEditBannerFormOpen(banner)}
+                            className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-cyan-400 hover:text-cyan-300 hover:bg-slate-850 cursor-pointer"
+                            title="Edit"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteBanner(banner.id)}
+                            className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-red-400 hover:text-red-300 hover:bg-slate-850 cursor-pointer"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* SECOND CARD: Remote Connection & Accounting Sync Settings (AnyDesk Alternative) */}
           <div className="bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl max-w-3xl mt-6 animate-fadeIn" dir="rtl">
             <h3 className="text-sm font-bold text-white mb-1 uppercase tracking-wider flex items-center gap-2">
@@ -3923,196 +4537,884 @@ export default function Dashboard({
             </div>
           </div>
 
-          {/* THIRD CARD: External System Catalog & Inventory Sync Integration Portal */}
+          {/* THIRD CARD: External System Catalog & Guided Integration Wizard Portal */}
           <div className="bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl max-w-3xl mt-6 animate-fadeIn text-right" dir="rtl">
-            <h3 className="text-sm font-bold text-white mb-1 uppercase tracking-wider flex items-center gap-2">
-              <span className="p-1 bg-indigo-950 text-indigo-400 rounded-lg"><Database className="w-4 h-4" /></span>
-              <span>{language === 'AR' ? 'بوابة تكامل جرد واستيراد السلع والمنتجات (الربط المالي الشامل)' : 'External Catalog Sync & Integration Hub'}</span>
-            </h3>
-            <p className="text-xs text-slate-500 mb-6 font-sans">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 pb-2 border-b border-slate-800/50 gap-2">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <span className="p-1 bg-indigo-950 text-indigo-400 rounded-lg"><Database className="w-4 h-4" /></span>
+                <span>{language === 'AR' ? 'معالج التكامل والربط المالي الذكي للمحلات' : 'Guided Inventory & Financial Integration Wizard'}</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-500 font-sans">
+                  {language === 'AR' ? 'وضع التاجر السهل 👑' : 'Merchant Easy Mode 👑'}
+                </span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+              </div>
+            </div>
+            
+            <p className="text-xs text-slate-400 mb-6 font-sans">
               {language === 'AR' 
-                ? 'يتيح لك هذا القسم سحب وتحديث الأصناف، الفهارس، كروت الشحن ومواد التموين بطريقة تفاعلية ومؤتمتة بالكامل من حزم البرامج المحاسبية الخارجية المعتمدة، الملفات المجدولة، أو خوادم الويب الخاصة بمتجر الذيباني.'
-                : 'Import, map, and synchronize active products, game vouchers, airtime categories, and grocery lists directly from external databases, central API servers, or pre-mapped Excel files.'}
+                ? 'اربط نظام المبيعات المحاسبي الخاص بمحلك (محاسب سوفت، أونكس برو، الأمين) بمتجر الذيباني لعرض ومزامنة السلع والأسعار وقائمة الديون آلياً دون الحاجة لمعرفة تقنية متقدمة.'
+                : 'Connect your local POS accounting system (Mohaseb Soft, Onyx Pro, Al-Ameen) with Al-Dhibani to synchronize prices, quantities and debt records instantly.'}
             </p>
 
-            <div className="space-y-5">
-              {/* Type selector */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs text-slate-400 font-bold">{language === 'AR' ? 'نوع المصدر المحاسبي الخارجي للسلع:' : 'Select Target Ledger System Type:'}</label>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-                  {/* ANDROID SQLITE */}
-                  <button
-                    type="button"
-                    onClick={() => setConfig({ ...config, integrationType: 'ANDROID' })}
-                    className={`p-3 rounded-xl border text-right transition-all flex flex-col items-center justify-center text-center gap-2 cursor-pointer select-none ${
-                      (config.integrationType || 'ANDROID') === 'ANDROID'
-                        ? 'bg-indigo-950/40 border-indigo-500 text-white'
-                        : 'bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-400'
-                    }`}
-                  >
-                    <span className="text-lg">📱</span>
-                    <span className="text-[10px] font-black">{language === 'AR' ? 'تطبيق أندرويد' : 'Android SQLite'}</span>
-                  </button>
-
-                  {/* WEB API */}
-                  <button
-                    type="button"
-                    onClick={() => setConfig({ ...config, integrationType: 'WEB' })}
-                    className={`p-3 rounded-xl border text-right transition-all flex flex-col items-center justify-center text-center gap-2 cursor-pointer select-none ${
-                      config.integrationType === 'WEB'
-                        ? 'bg-indigo-950/40 border-indigo-500 text-white'
-                        : 'bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-400'
-                    }`}
-                  >
-                    <span className="text-lg">🌐</span>
-                    <span className="text-[10px] font-black">{language === 'AR' ? 'خدمات ويب API' : 'REST Web API'}</span>
-                  </button>
-
-                  {/* DESKTOP DLL */}
-                  <button
-                    type="button"
-                    onClick={() => setConfig({ ...config, integrationType: 'DESKTOP' })}
-                    className={`p-3 rounded-xl border text-right transition-all flex flex-col items-center justify-center text-center gap-2 cursor-pointer select-none ${
-                      config.integrationType === 'DESKTOP'
-                        ? 'bg-indigo-950/40 border-indigo-500 text-white'
-                        : 'bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-400'
-                    }`}
-                  >
-                    <span className="text-lg">💻</span>
-                    <span className="text-[10px] font-black">{language === 'AR' ? 'نظام مكتبي محلي' : 'Desktop Link'}</span>
-                  </button>
-
-                  {/* EXCEL SHEET */}
-                  <button
-                    type="button"
-                    onClick={() => setConfig({ ...config, integrationType: 'EXCEL' })}
-                    className={`p-3 rounded-xl border text-right transition-all flex flex-col items-center justify-center text-center gap-2 cursor-pointer select-none ${
-                      config.integrationType === 'EXCEL'
-                        ? 'bg-indigo-950/40 border-indigo-500 text-white'
-                        : 'bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-400'
-                    }`}
-                  >
-                    <span className="text-lg">📊</span>
-                    <span className="text-[10px] font-black">{language === 'AR' ? 'شيت إكسل Excel' : 'Excel Sheet'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Dynamic Sub-inputs based on selector */}
-              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-850 space-y-4 font-sans text-right" dir="rtl">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] text-slate-400 font-bold block text-right">
-                      {config.integrationType === 'EXCEL' 
-                        ? (language === 'AR' ? 'مسار أو اسم ملف Excel المستهدف:' : 'Excel Worksheet File Path:')
-                        : (language === 'AR' ? 'رابط بوابة الدمج والاستيراد (API URL):' : 'Integration Endpoint API URL:')}
-                    </label>
-                    <input
-                      type="text"
-                      value={config.integrationEndpoint || ''}
-                      onChange={(e) => setConfig({ ...config, integrationEndpoint: e.target.value })}
-                      placeholder={config.integrationType === 'EXCEL' ? 'Dhibani-Inventory-2026.xlsx' : 'https://aldhibani-api.com/v1/android-sync'}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono text-left focus:outline-none focus:border-indigo-500 w-full"
-                    />
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] text-slate-400 font-bold block text-right">{language === 'AR' ? 'رمز الوصول السري للربط والتحقق (API SecToken):' : 'Secret Security Key (Authorization Token):'}</label>
-                    <input
-                      type="password"
-                      value={config.integrationApiKey || ''}
-                      onChange={(e) => setConfig({ ...config, integrationApiKey: e.target.value })}
-                      placeholder="ALDHB_SECURE_TOKEN_XXXX"
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono text-left focus:outline-none focus:border-indigo-500 w-full"
-                    />
-                  </div>
-                </div>
-
-                <div className="text-[10px] text-slate-500 leading-relaxed border-t border-slate-900 pt-2 flex items-center gap-2">
-                  <span className="text-indigo-400 font-bold">💡 {language === 'AR' ? 'حول المصدر الحالي:' : 'Tip:'}</span>
-                  <span>
-                    {(config.integrationType || 'ANDROID') === 'ANDROID' && (language === 'AR' ? 'يقوم بقراءة قاعدة بيانات التطبيق أندرويد مباشرة واستخلاص الفئات وباقات الشحن الفوري.' : 'Reads local SQLite databases on Android to map airtimes.')}
-                    {config.integrationType === 'WEB' && (language === 'AR' ? 'يستعلم من خادم API السحابي للغمر والإنفاق عبر بروتوكول RESTful قياسي.' : 'Polls central cloud application node for catalogue updates.')}
-                    {config.integrationType === 'DESKTOP' && (language === 'AR' ? 'يرتبط بنظام إدارة مبيعات السنترال المكتبي المحلي لتفصيل مبيعات ومواد التموين.' : 'Integrates with native windows background system dispatcher.')}
-                    {config.integrationType === 'EXCEL' && (language === 'AR' ? 'يستورد جدول كامل من معروض السلع بملفات الإكسل لرفع الكتالوج آلياً بدفعة واحدة.' : 'Validates raw XLS tables and parses list rows into active showrooms.')}
+            {/* 🧙‍♂️ STEP WIZARD CONTAINER */}
+            <div className="space-y-6">
+              
+              {/* Progress Tracker bar */}
+              <div className="mb-6 border-b border-slate-800/60 pb-5">
+                <div className="flex items-center justify-between mb-3 text-xs">
+                  <span className="text-indigo-400 font-bold font-mono">
+                    {language === 'AR' ? `الخطوة ${wizardStep} من 7` : `Step ${wizardStep} of 7`}
+                  </span>
+                  <span className="text-slate-300 font-bold font-sans">
+                    {wizardStep === 1 && (language === 'AR' ? '١. اختر برنامجك الحسابي' : '1. Choose Accounting System')}
+                    {wizardStep === 2 && (language === 'AR' ? '٢. حدد طريقة توصيل البيانات' : '2. Choose Connection Method')}
+                    {wizardStep === 3 && (language === 'AR' ? '٣. ربط وتوصيل المصدر' : '3. Connect Data Source')}
+                    {wizardStep === 4 && (language === 'AR' ? '٤. فحص وتحليل الملف' : '4. Analyze Source')}
+                    {wizardStep === 5 && (language === 'AR' ? '٥. مطابقة الحقول الفنية' : '5. Validate Fields Mapping')}
+                    {wizardStep === 6 && (language === 'AR' ? '٦. معاينة جرد السلع المستوردة' : '6. Catalog Import Preview')}
+                    {wizardStep === 7 && (language === 'AR' ? '٧. جدولة المزامنة والتشغيل' : '7. Synchronisation Complete')}
                   </span>
                 </div>
+                
+                {/* Horizontal Progress bar beads */}
+                <div className="grid grid-cols-7 gap-1.5">
+                  {[1, 2, 3, 4, 5, 6, 7].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => s <= wizardStep && setWizardStep(s)}
+                      disabled={s > wizardStep}
+                      className={`h-2 rounded-full transition-all duration-300 ${
+                        s === wizardStep
+                          ? 'bg-gradient-to-r from-amber-500 to-indigo-500 shadow-md shadow-indigo-950/40 w-full'
+                          : s < wizardStep
+                          ? 'bg-emerald-500 hover:bg-emerald-400 cursor-pointer w-full'
+                          : 'bg-slate-800 cursor-not-allowed w-full'
+                      }`}
+                      title={`اذهب للخطوة ${s}`}
+                    />
+                  ))}
+                </div>
               </div>
 
-              {/* Action buttons */}
-              <div className="flex flex-wrap gap-3 items-center justify-end font-sans">
-                <button
-                  type="button"
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    try {
-                      const res = await fetch('/api/config', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          'Authorization': authToken || ''
-                        },
-                        body: JSON.stringify(config)
-                      });
-                      if (res.ok) {
-                        const body = await res.json();
-                        setConfig(body.config);
-                        onConfigChanged(body.config);
-                        saveItem('aldhibani_local_config', body.config);
-                        alert(language === 'AR' ? 'تم تسجيل كود وتفاصيل ربط السلع بنجاح!' : 'Commodity integration credentials saved successfully!');
-                      }
-                    } catch {
-                      alert(language === 'AR' ? 'حدث خطأ غير متوقع أثناء الحفظ!' : 'Save unexpected error');
-                    }
-                  }}
-                  className="py-2.5 px-4 rounded-xl bg-slate-950 text-slate-300 border border-slate-800 hover:text-white transition-all text-xs font-black flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>{language === 'AR' ? 'تسجيل إرسالية تكامل السلع' : 'Save Credentials Details'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isSyncing}
-                  onClick={triggerExternalIntegrationSync}
-                  className={`py-2.5 px-5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-lg ${
-                    isSyncing 
-                      ? 'bg-slate-850 text-slate-500 cursor-not-allowed'
-                      : 'bg-indigo-600 hover:bg-indigo-500 text-white animate-pulse'
-                  }`}
-                >
-                  <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                  <span>{language === 'AR' ? 'بدء استيراد وجرد الأصناف تلقائياً 🔄' : 'Run Import & Catalog Sync Now 🔄'}</span>
-                </button>
-              </div>
-
-              {/* Streaming logs block */}
-              {(isSyncing || syncLogs.length > 0) && (
-                <div className="bg-slate-950 rounded-2xl border border-slate-850 p-4.5 space-y-2 animate-fadeIn text-right" dir="rtl">
-                  <span className="text-[10px] text-slate-400 tracking-widest font-mono font-bold block pb-1.5 border-b border-slate-900 text-left">
-                    LIVE SYSTEM DATA IMPORT ORCHESTRATOR / CONSOLE LOGS
-                  </span>
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto font-mono text-[11px] leading-relaxed">
-                    {syncLogs.map((log, index) => (
-                      <div 
-                        key={index} 
-                        className={
-                          log.includes('🔴') || log.includes('error')
-                            ? 'text-red-400' 
-                            : log.includes('🟢') || log.includes('📥') || log.includes('✅')
-                            ? 'text-emerald-400 font-bold' 
-                            : log.includes('🚀') 
-                            ? 'text-indigo-400 font-bold' 
-                            : 'text-slate-300'
-                        }
+              {/* STEP 1: CHOOSE INTEGRATION SOURCE */}
+              {wizardStep === 1 && (
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold text-slate-300">{language === 'AR' ? 'حدد النظام المالي الذي تستخدمه في محلك التجاري:' : 'Choose the financial/ledger program running inside your shop:'}</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+                    {[
+                      { id: 'mohaseb', nameAR: 'محاسب سوفت', nameEN: 'Mohaseb Soft', label: '💻 📱', desc: 'الأكثر استخداماً في معارض الجملة والتجزئة باليمن', isHot: true },
+                      { id: 'onyx', nameAR: 'أونكس برو Onyx', nameEN: 'Onyx Pro Ledger', label: '💎', desc: 'حلول يمن سوفت المتكاملة للشركات الكبرى' },
+                      { id: 'al_ameen', nameAR: 'الأمين للمحاسبة', nameEN: 'Al-Ameen Ledger', label: '⚖️', desc: 'إدارة مخازن وقاعدة بيانات متينة' },
+                      { id: 'odoo', nameAR: 'برنامج أودو Odoo', nameEN: 'Odoo Web ERP', label: '🌐', desc: 'نظام تخطيط سحابي محلي متقدم' },
+                      { id: 'excel', nameAR: 'ملفات إكسل / CSV', nameEN: 'Excel / CSV Sheets', label: '📊', desc: 'استيراد يدوي مباشر للجرد السريع' },
+                      { id: 'android', nameAR: 'تطبيق أندرويد', nameEN: 'Android app Database', label: '📱', desc: 'مزامنة مباشرة عبر هاتف المحل' },
+                      { id: 'custom', nameAR: 'نظام مخصص / API', nameEN: 'Custom System Link', label: '🛠️', desc: 'خادم مخصص عبر بوابات الويب الخاصة بك' }
+                    ].map((src) => (
+                      <button
+                        key={src.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedSource(src.id);
+                          saveWizardProgress(1);
+                        }}
+                        className={`p-4 rounded-2xl border text-right transition-all flex flex-col justify-between h-36 group cursor-pointer ${
+                          selectedSource === src.id
+                            ? 'bg-indigo-950/50 border-indigo-500 text-white shadow-xl shadow-indigo-950/30'
+                            : 'bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-400'
+                        }`}
                       >
-                        {log}
+                        <div className="flex justify-between items-start w-full">
+                          <span className="text-xl">{src.label}</span>
+                          {src.isHot && (
+                            <span className="bg-amber-500/10 text-amber-500 text-[8px] px-1.5 py-0.5 rounded-full font-black border border-amber-500/10">
+                              {language === 'AR' ? 'الأكثر شيوعاً ⭐' : 'Most Popular'}
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <span className="text-xs font-black block group-hover:text-white transition-colors">
+                            {language === 'AR' ? src.nameAR : src.nameEN}
+                          </span>
+                          <p className="text-[10px] text-slate-500 font-sans mt-1 leading-normal line-clamp-2">
+                            {src.desc}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2: CHOOSE CONNECTION METHOD */}
+              {wizardStep === 2 && (
+                <div className="space-y-4">
+                  <div className="text-right">
+                    <h4 className="text-xs font-bold text-slate-350">
+                      {language === 'AR' 
+                        ? `اختر طريقة استيراد البيانات من [ ${selectedSource === 'mohaseb' ? 'محاسب سوفت' : selectedSource === 'excel' ? 'جداول إكسل' : selectedSource === 'android' ? 'أندرويد' : selectedSource} ]:`
+                        : `Select connection method for chosen accounting ledger:`}
+                    </h4>
+                    <p className="text-[10.5px] text-slate-500 font-sans mt-0.5">
+                      {language === 'AR' ? 'نوفر خيارات مرنة لتوفير الراحة والخصوصية لمتجرك المالي.' : 'Flexible sync options based on your shop network setup.'}
+                    </p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {[
+                      {
+                        id: 'backup',
+                        nameAR: '📁 رفع نسخة احتياطية مباشرة (الخيار الأسهل)',
+                        nameEN: 'Local Database Backup File Upload',
+                        desc: language === 'AR' 
+                          ? 'قم بتصدير ملف الجرد (.sqlite أو .db أو .zip) من الكومبيوتر، ثم ارفعه هنا بلمسة زر لتسحب الأصناف فورياً.'
+                          : 'Export catalog backup database, slot it here physically. 100% cloud-secure.',
+                        allowedSources: ['mohaseb', 'onyx', 'al_ameen', 'excel', 'android', 'custom']
+                      },
+                      {
+                        id: 'gdrive',
+                        nameAR: '☁️ مزامنة آلية مجدولة عبر Google Drive',
+                        nameEN: 'Google Drive Scheduled Folder Sync',
+                        desc: language === 'AR' 
+                          ? 'احفظ النسخة في حساب جوجل درايف الخاص بك، وسيقوم نظامنا بسحبها وتحديث الكتالوج آلياً بدورة مستمرة دون تدخل بشري.'
+                          : 'Auto-fetch backup copies from synced GDrive directories in real time.',
+                        allowedSources: ['mohaseb', 'onyx', 'al_ameen', 'custom']
+                      },
+                      {
+                        id: 'agent',
+                        nameAR: '🔄 من خلال العميل المساعد (Local Sync Agent)',
+                        nameEN: 'Local Sync Agent Helper App',
+                        desc: language === 'AR' 
+                          ? 'تنصيب أداة خلفية ذكية على كومبيوتر المحل، تقوم برفع فواتير الجرد والتحديث تلقائياً بهدوء تام وبدون AnyDesk.'
+                          : 'Installs lightweight serverless agent daemon on local cash system to auto-push sheets.',
+                        allowedSources: ['mohaseb', 'onyx', 'al_ameen', 'odoo', 'custom']
+                      },
+                      {
+                        id: 'api',
+                        nameAR: '🔌 اتصال برأس دمج مباشر (REST API Endpoint) - متطور',
+                        nameEN: 'Direct REST API Sync Gateway',
+                        desc: language === 'AR' 
+                          ? 'تهيئة خادم ويب مخصص ورموز وصول تفاعلية المبرمجين للربط الكلي المباشر للأنظمة المعقدة السحابية.'
+                          : 'Setup cloud API Webhook hooks for customized backend programmatic pipelines.',
+                        allowedSources: ['mohaseb', 'odoo', 'android', 'custom']
+                      }
+                    ]
+                    .filter(m => m.allowedSources.includes(selectedSource))
+                    .map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedMethod(m.id);
+                          saveWizardProgress(2);
+                        }}
+                        className={`p-4 rounded-2xl border text-right transition-all flex flex-col justify-between h-40 group cursor-pointer ${
+                          selectedMethod === m.id
+                            ? 'bg-indigo-950/50 border-indigo-500 text-white shadow-xl shadow-indigo-950/30'
+                            : 'bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-400'
+                        }`}
+                      >
+                        <div>
+                          <span className="text-xs font-black block group-hover:text-amber-400 transition-colors">
+                            {language === 'AR' ? m.nameAR : m.nameEN}
+                          </span>
+                          <p className="text-[10px] text-slate-500 font-sans mt-2 leading-relaxed">
+                            {m.desc}
+                          </p>
+                        </div>
+                        <div className="w-full text-left pt-2 font-mono text-[9px] text-indigo-550">
+                          {m.id === 'gdrive' && 'CLOUD GDRIVE_ROUTING'}
+                          {m.id === 'backup' && 'LOCAL SNAPSHOT_UPLOAD'}
+                          {m.id === 'agent' && 'BACKGROUND DAEMON_AGENT'}
+                          {m.id === 'api' && 'DEVELOPER API_WEBHOOK'}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 3: CONNECT DATA SOURCE */}
+              {wizardStep === 3 && (
+                <div className="space-y-4">
+                  
+                  {/* CASE A: BACKUP FILE UPLOAD */}
+                  {selectedMethod === 'backup' && (
+                    <div className="space-y-4 font-sans text-right">
+                      <div>
+                        <h4 className="text-xs font-black text-slate-200">{language === 'AR' ? 'قم برفع ملف النسخة الاحتياطية المحاسبية:' : 'Upload your retail ledger database file:'}</h4>
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          {language === 'AR' 
+                            ? 'يدعم النظام استيراد وفحص الملفات مباشرة: SQLite (.sqlite) أو SQL Database (.db) أو الحزم المضغوطة (.zip).'
+                            : 'Accepted raw files: SQLite (.sqlite), SQL databases (.db), or archived backups (.zip).'}
+                        </p>
+                      </div>
+                      
+                      <div
+                        onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+                        onDragLeave={() => setDragActive(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragActive(false);
+                          if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                            const file = e.dataTransfer.files[0];
+                            setWizardBackupFileName(file.name);
+                            localStorage.setItem('import_wizard_backup_filename', file.name);
+                          }
+                        }}
+                        className={`border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
+                          dragActive 
+                            ? 'border-indigo-400 bg-indigo-950/20 shadow-inner' 
+                            : wizardBackupFileName
+                            ? 'border-emerald-500/50 bg-emerald-950/10'
+                            : 'border-slate-800 bg-slate-950 hover:border-slate-700'
+                        }`}
+                        onClick={() => {
+                          const mockFiles = [
+                            'Dhibani_Mohaseb_Retail_Backup_2026.sqlite',
+                            'Alameen_Warehouse_Snapshot.db',
+                            'YemenSoft_InvoiceExporter.zip',
+                            'DhibaniGrocery_Retail_Jard.sqlite'
+                          ];
+                          const randomFile = mockFiles[Math.floor(Math.random() * mockFiles.length)];
+                          setWizardBackupFileName(randomFile);
+                          localStorage.setItem('import_wizard_backup_filename', randomFile);
+                        }}
+                      >
+                        {wizardBackupFileName ? (
+                          <div className="space-y-3">
+                            <span className="text-3xl">🎉 📦</span>
+                            <p className="text-xs text-white font-black">{wizardBackupFileName}</p>
+                            <div className="flex items-center gap-1.5 justify-center">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                              <span className="text-[10px] text-emerald-400 font-bold">{language === 'AR' ? 'تم قراءة الملف وتأكيد الهيكل بنجاح!' : 'Prepared for database scan & mapping analysis'}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setWizardBackupFileName('');
+                                localStorage.removeItem('import_wizard_backup_filename');
+                              }}
+                              className="bg-red-950/60 hover:bg-red-900 border border-red-500/10 text-red-400 text-[10px] px-3 py-1 rounded-xl transition-all"
+                            >
+                              {language === 'AR' ? 'مسح واختيار ملف آخر 🗑' : 'Clear and upload another'}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-3 font-sans">
+                            <span className="text-3xl text-slate-600">📥</span>
+                            <p className="text-xs text-slate-300 font-bold">
+                              {language === 'AR' ? 'اسحب ملف قاعدة البيانات وضعه هنا، أو انقر للتصفح التلقائي والمحاكاة فورا!' : 'Drag & drop your database backup here, or click to choose from directory'}
+                            </p>
+                            <p className="text-[9.5px] text-slate-500 max-w-sm">
+                              {language === 'AR' ? '💡 لتجربة ميزات المعالج، اضغط في أي مكان داخل هذا المربع لتحميل ملف محاكاة فوري بنجاح.' : '💡 For live prototyping purposes, tapping will auto-simulate a matched inventory.'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CASE B: GOOGLE DRIVE CONNECTION */}
+                  {selectedMethod === 'gdrive' && (
+                    <div className="space-y-4 font-sans text-right">
+                      <div className="bg-indigo-950/30 border border-indigo-500/15 p-4 rounded-2xl flex items-start gap-3">
+                        <span className="text-xl">💡</span>
+                        <div>
+                          <h5 className="text-xs font-black text-indigo-400">{language === 'AR' ? 'المزامنة السحابية المريحة:' : 'Configuring Cloud Folder Sync:'}</h5>
+                          <p className="text-[10px] text-slate-400 mt-1 leading-normal">
+                            {language === 'AR'
+                              ? 'قم بوضع رابط مجلد قوقل درايف المشترك الذي يحوي نسخة الجرد. سيقوم النظام باستخلاص كود المجلد المالي والمسار المشترك تلقائياً دون الحاجة لإدخال رموز برمجية معقدة.'
+                              : 'Place the shareable google drive link below and the system extracts folder keys to secure automation parameters.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[11px] text-slate-400 font-bold">{language === 'AR' ? 'عنوان بريد Google المالك للمجلد:' : 'Owner Google Email Address:'}</label>
+                          <input
+                            type="email"
+                            value={wizardGdriveEmail}
+                            onChange={(e) => {
+                              setWizardGdriveEmail(e.target.value);
+                              localStorage.setItem('import_wizard_gdrive_email', e.target.value);
+                            }}
+                            placeholder="abdulkrem065@gmail.com"
+                            className="bg-slate-950 border border-slate-850 focus:border-indigo-500 px-4 py-2 text-xs text-white focus:outline-none placeholder:text-slate-700 font-mono text-left"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[11px] text-slate-400 font-bold">{language === 'AR' ? 'رابط مجلد Google Drive المشترك بالكامل:' : 'Shared Google Drive Folder Link:'}</label>
+                          <input
+                            type="text"
+                            value={wizardGdriveLink}
+                            onChange={(e) => handleGdriveLinkChange(e.target.value)}
+                            placeholder="https://drive.google.com/drive/folders/1T0hynySeDmqMYRKkeZCqPTn..."
+                            className="bg-slate-950 border border-slate-850 focus:border-indigo-500 px-4 py-2 text-xs text-white focus:outline-none placeholder:text-slate-700 font-mono text-left"
+                          />
+                          {config.remoteGDriveFolderId && (
+                            <span className="text-[9.5px] text-emerald-400 font-bold mt-1 block">
+                              {language === 'AR' ? `✓ تم استخراج معرف المجلد تلقائياً: ${config.remoteGDriveFolderId}` : `✓ Extracted Folder ID automatically: ${config.remoteGDriveFolderId}`}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CASE C: LOCAL SYNC AGENT */}
+                  {selectedMethod === 'agent' && (
+                    <div className="space-y-4 font-sans text-right animate-fadeIn">
+                      <div className="bg-slate-950 rounded-2xl p-5 border border-slate-850 flex flex-col justify-between h-44">
+                        <div>
+                          <h5 className="text-xs font-black text-amber-500 flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping" />
+                            <span>{language === 'AR' ? 'حالة العميل المساعد (Local Database Daemon)' : 'Local Sync Agent Connection Status'}</span>
+                          </h5>
+                          <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                            {language === 'AR'
+                              ? 'متصل ونشط بالخلفية 🟢. يقوم العميل المساعد بإنشاء مجلف محلي لمراقبة تحديثات نظام المبيعات وقاعدة ببيانات السنترال وتصنيفات السلع كل دقيقة.'
+                              : 'Lightweight C++ client daemon is listening securely from local business networks.'}
+                          </p>
+                        </div>
+                        
+                        <div className="flex items-center justify-between border-t border-slate-900 pt-3 text-[10px] text-slate-500">
+                          <span>{language === 'AR' ? 'عنوان المضيف: Localhost' : 'Host address: Localhost'}</span>
+                          <span className="font-mono bg-slate-900 px-2 py-0.5 rounded text-indigo-400">SYNC_AGENT_READY</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CASE D: DIRECT API */}
+                  {selectedMethod === 'api' && (
+                    <div className="space-y-4 font-sans text-right">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[11px] text-slate-400 font-bold">{language === 'AR' ? 'رابط بوابة الدمج والاستيراد (API URL):' : 'Endpoint REST API URL:'}</label>
+                          <input
+                            type="text"
+                            value={config.integrationEndpoint || ''}
+                            onChange={(e) => {
+                              const updated = { ...config, integrationEndpoint: e.target.value };
+                              setConfig(updated);
+                              onConfigChanged(updated);
+                              saveItem('aldhibani_local_config', updated);
+                            }}
+                            placeholder="https://yourstore.net/api/v1/sync"
+                            className="bg-slate-950 border border-slate-850 px-4 py-2 text-xs text-white placeholder:text-slate-700 font-mono text-left focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[11px] text-slate-400 font-bold">{language === 'AR' ? 'رمز التحقق والوصول السري للمطورين (SecToken):' : 'Security SecToken Key:'}</label>
+                          <input
+                            type="password"
+                            value={config.integrationApiKey || ''}
+                            onChange={(e) => {
+                              const updated = { ...config, integrationApiKey: e.target.value };
+                              setConfig(updated);
+                              onConfigChanged(updated);
+                              saveItem('aldhibani_local_config', updated);
+                            }}
+                            placeholder="ALDHB_SECURE_TOKEN_XXXX"
+                            className="bg-slate-950 border border-slate-850 px-4 py-2 text-xs text-white placeholder:text-slate-700 font-mono text-left focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* STEP 4: ANALYZE SOURCE MAPS */}
+              {wizardStep === 4 && (
+                <div className="space-y-4 font-sans">
+                  {isWizardAnalyzing ? (
+                    <div className="py-12 flex flex-col items-center justify-center text-center space-y-4 animate-pulse">
+                      <RefreshCw className="w-10 h-10 text-indigo-500 animate-spin" />
+                      <h4 className="text-xs font-black text-white">{language === 'AR' ? 'جاري قراءة بنية قاعدة البيانات واستكشاف الجداول...' : 'Analyzing database tables and indexes...'}</h4>
+                      <p className="text-[10px] text-slate-500 font-mono">
+                        {language === 'AR' 
+                          ? 'مستودع الفحص اللحظي يقوم بقراءة ترويسات الصلاحية ومطابقتها مع تراكيب الذيباني VIP...'
+                          : 'Validating relational SQLite schema, indices, products list and current customer logs...'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 text-right animate-fadeIn" dir="rtl">
+                      <div className="flex items-center justify-between border-b border-slate-800/65 pb-3">
+                        <h4 className="text-xs font-bold text-slate-200">{language === 'AR' ? '📑 تقرير الفحص التلقائي وسلامة البيانات ومطابقة النسخة:' : '📑 Scanner Diagnostics & Local Database Health:'}</h4>
+                        <span className="bg-emerald-950 text-emerald-400 text-[10px] px-2.5 py-1 rounded-full font-black border border-emerald-500/10">
+                          {wizardAnalysisResult?.readinessStatus === 'success' ? (language === 'AR' ? 'متوافق وجاهز بنسبة 100% ✓' : 'Ready 100% ✓') : 'تنبيه'}
+                        </span>
+                      </div>
+
+                      <p className="text-[11px] text-slate-300 leading-relaxed bg-emerald-950/20 border border-emerald-500/20 p-4 rounded-2xl flex items-center gap-2">
+                        <span>🛡️</span>
+                        <span>{wizardAnalysisResult?.readinessReport}</span>
+                      </p>
+
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+                        {[
+                          { labelAR: 'السلع المتاحة للبيع', labelEN: 'Importable Products', count: wizardAnalysisResult?.productsCount || 314, emoji: '📦' },
+                          { labelAR: 'الأقسام والتصنيفات', labelEN: 'Categories Detected', count: wizardAnalysisResult?.categoriesCount || 11, emoji: '📁' },
+                          { labelAR: 'سجلات زبائن المتجر', labelEN: 'Customers Profiled', count: wizardAnalysisResult?.customersCount || 68, emoji: '👤' },
+                          { labelAR: 'الديون الماليّة الفعالة', labelEN: 'Active Debts Mapped', count: wizardAnalysisResult?.debtsCount || 29, emoji: '⚖️' },
+                          { labelAR: 'مجموع المخزون العام', labelEN: 'Aggregate Items Stock', count: wizardAnalysisResult?.inventoryCount || 8900, emoji: '⚡' }
+                        ].map((stat, i) => (
+                          <div key={i} className="bg-slate-950 border border-slate-850 p-4 rounded-xl flex flex-col items-center text-center justify-center gap-1.5 hover:border-slate-800 transition-colors">
+                            <span className="text-xl">{stat.emoji}</span>
+                            <span className="text-[10px] text-slate-400 block h-6 leading-tight font-bold">
+                              {language === 'AR' ? stat.labelAR : stat.labelEN}
+                            </span>
+                            <span className="font-mono text-xs font-black text-white mt-1 border-t border-slate-900 pt-1.5 w-full">
+                              {stat.count.toLocaleString()}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* STEP 5: MAPPING FIELDS VIEW */}
+              {wizardStep === 5 && (
+                <div className="space-y-4 font-sans text-right animate-fadeIn" dir="rtl">
+                  <div>
+                    <h4 className="text-xs font-black text-slate-350">{language === 'AR' ? 'مطابقة ومطاردة الأعمدة الفنية للمنتجات:' : 'System Columns Correspondence Mapper:'}</h4>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      {language === 'AR'
+                        ? 'قمنا بمطابقة محتوى الجداول آلياً بناء على خوارزميات التشابه. لا داعي لتعديلها يدوياً إلا إذا أردت جلب عمود مخصص.'
+                        : 'Adjust database columns to correspond correctly to system standards.'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-3.5 max-w-2xl">
+                    {[
+                      { key: 'name', labelAR: 'اسم الصنف أو باقة الشحن الفوري:', icon: '📝', value: wizardFieldMappings.name, options: ['name_ar', 'item_name', 'products.name_ar', 'prod_title'] },
+                      { key: 'price', labelAR: 'السعر المستحق في العرض باليمني (YER):', icon: '💰', value: wizardFieldMappings.price, options: ['price_yer', 'price_local', 'products.price_yer', 'sell_price'] },
+                      { key: 'stock', labelAR: 'الكميات المتوفرة في المستودعات:', icon: '⚡', value: wizardFieldMappings.stock, options: ['stock', 'qty_available', 'products.stock', 'stock_qty'] },
+                      { key: 'category', labelAR: 'كود وفئة الرف أو الكتالوج:', icon: '📁', value: wizardFieldMappings.category, options: ['category', 'group_id', 'products.category', 'cat_code'] }
+                    ].map((field) => (
+                      <div key={field.key} className="bg-slate-950 border border-slate-850 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-slate-800 transition-colors">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-lg">{field.icon}</span>
+                          <div>
+                            <span className="text-xs font-black text-slate-200 block leading-none mb-1">{field.labelAR}</span>
+                            <span className="font-mono text-[9px] text-slate-500">Local System Field: {field.key}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] text-emerald-400 font-bold bg-emerald-950/40 border border-emerald-500/15 px-2 py-0.5 rounded-full animate-pulse">
+                            {language === 'AR' ? 'تم المطابقة ذاتياً 🟢' : 'Matched 🟢'}
+                          </span>
+                          <select
+                            value={field.value}
+                            onChange={(e) => {
+                              const updatedValue = e.target.value;
+                              setWizardFieldMappings(prev => ({ ...prev, [field.key]: updatedValue }));
+                            }}
+                            className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-indigo-500"
+                          >
+                            {field.options.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
+
+              {/* STEP 6: IMPORT PREVIEW & RUN SYNC */}
+              {wizardStep === 6 && (
+                <div className="space-y-4 font-sans text-right" dir="rtl">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-250">{language === 'AR' ? 'معاينة تذكرة الجرد وتحديث السلع والديون قبل النشر المعتمد:' : 'Pre-flight Inventory Verification Table:'}</h4>
+                    <p className="text-[10px] text-slate-500 font-sans mt-0.5">
+                      {language === 'AR'
+                        ? 'مراجعة أولية للسلع المجلوبة من قاعدة ببيانات محلك والمقترحة لتعديل أسعار الكتالوج الحالي بالصالة.'
+                        : 'Review pending changes pulled from external system before persisting in showroom.'}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-950 rounded-2xl border border-slate-850 overflow-hidden shadow-inner">
+                    <table className="w-full text-xs text-slate-300 text-right">
+                      <thead className="bg-slate-900 text-[10px] uppercase font-bold text-slate-500 border-b border-slate-850">
+                        <tr>
+                          <th className="py-2.5 px-4">{language === 'AR' ? 'مفتاح الصنف' : 'Record SKU'}</th>
+                          <th className="py-2.5 px-4">{language === 'AR' ? 'اسم السلعة المستوردة' : 'Product Mapped Name'}</th>
+                          <th className="py-2.5 px-4">{language === 'AR' ? 'الكمية الفعالة' : 'Pending qty'}</th>
+                          <th className="py-2.5 px-4">{language === 'AR' ? 'سعر البيع المحلي YER' : 'Exchange Price'}</th>
+                          <th className="py-2.5 px-4">{language === 'AR' ? 'نوع الإجراء' : 'Sync Event'}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-900">
+                        {[
+                          { id: '101A', name: 'شحن فوري يمن موبايل بقيمة 1000 ريال', stock: 156, price: '1,000 YER', status: 'صنف جديد 🟢', isNew: true },
+                          { id: '102B', name: 'باقة يو سبست 4G السريعة الشهرية بميزات الترا', stock: 89, price: '4,500 YER', status: 'باقة جديدة 🟢', isNew: true },
+                          { id: '103C', name: 'بطاقات وكروت سبأفون نت شحن مباشر 2000', stock: 210, price: '2,000 YER', status: 'تعديل السعر والمخزون ⚡', isNew: false },
+                          { id: '104D', name: 'عسل سدر دوعني ملكي فاخر (كيلو إكسل)', stock: 45, price: '24,000 YER', status: 'جديد مع جرد ديونه 🟢', isNew: true }
+                        ].map((p, idx) => (
+                          <tr key={idx} className="hover:bg-slate-900/40">
+                            <td className="py-3 px-4 font-mono text-[10px] text-slate-500">{p.id}</td>
+                            <td className="py-3 px-4 font-black text-slate-200">{p.name}</td>
+                            <td className="py-3 px-4 font-mono text-[11px] text-amber-500">{p.stock}</td>
+                            <td className="py-3 px-4 font-mono text-[11px] text-emerald-400">{p.price}</td>
+                            <td className="py-3 px-4">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                p.isNew 
+                                  ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/10'
+                                  : 'bg-indigo-950/40 text-indigo-400 border border-indigo-500/10'
+                              }`}>
+                                {p.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex flex-col gap-3.5 pt-1">
+                    <button
+                      type="button"
+                      disabled={isSyncing}
+                      onClick={() => {
+                        triggerExternalIntegrationSync();
+                      }}
+                      className={`py-3 px-5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg leading-none ${
+                        isSyncing 
+                          ? 'bg-slate-850 text-slate-500 cursor-not-allowed border border-slate-800'
+                          : 'bg-indigo-650 hover:bg-indigo-600 text-white shadow-xl shadow-indigo-950/40 animate-pulse'
+                      }`}
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                      <span>{language === 'AR' ? 'تأكيد الحقول والبدء بالاستيراد والجرد الفعلي للأصناف الآن 🔄' : 'Confirm mapping mappings and run catalog import now 🔄'}</span>
+                    </button>
+
+                    {/* Dynamic console streaming output logs within step 6 */}
+                    {(isSyncing || syncLogs.length > 0) && (
+                      <div className="bg-slate-950 rounded-2xl border border-slate-850 p-4.5 space-y-2 animate-fadeIn text-right" dir="rtl">
+                        <span className="text-[9px] text-slate-500 tracking-widest font-mono font-bold block pb-1.5 border-b border-slate-900 text-left">
+                          LIVE SYSTEM DATA IMPORT ORCHESTRATOR / CONSOLE LOGS
+                        </span>
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto font-mono text-[10.5px] leading-relaxed">
+                          {syncLogs.map((log, index) => (
+                            <div 
+                              key={index} 
+                              className={
+                                log.includes('🔴') || log.includes('error')
+                                  ? 'text-red-400' 
+                                  : log.includes('🟢') || log.includes('📥') || log.includes('✅')
+                                  ? 'text-emerald-400 font-bold' 
+                                  : log.includes('🚀') 
+                                  ? 'text-indigo-400 font-bold' 
+                                  : 'text-slate-400'
+                              }
+                            >
+                              {log}
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {syncSuccess && !isSyncing && (
+                          <div className="pt-3 border-t border-slate-900 flex justify-between items-center">
+                            <span className="text-[10px] text-emerald-400 font-black flex items-center gap-1">
+                              ✓ {language === 'AR' ? 'اكتمل استيراد وتحديث قاعدة البيانات بنجاح!' : 'Pristine DB compiled successfully!'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleWizardNext()}
+                              className="py-1.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl cursor-pointer shadow-md"
+                            >
+                              {language === 'AR' ? 'استمرار للخطوة الأخيرة ➡' : 'Move to final customization step ➡'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 7: SYNC SCHEDULING COMPLETE CUSTOMIZE */}
+              {wizardStep === 7 && (
+                <div className="space-y-6 text-right font-sans animate-fadeIn" dir="rtl">
+                  <div className="bg-emerald-950/20 border border-emerald-500/15 p-6 rounded-3xl flex flex-col items-center justify-center text-center space-y-3.5">
+                    <span className="text-4xl animate-bounce">🏆 👑</span>
+                    <h4 className="text-sm font-black text-white">{language === 'AR' ? 'تهانينا الحارة! تم الربط المالي والمزامنة الكلية بنجاح 100%' : 'Shop coupled & unified with shop accounting system!'}</h4>
+                    <p className="text-[11px] text-slate-400 max-w-lg leading-relaxed">
+                      {language === 'AR'
+                        ? `أصبح متجرك الذكي الآن مؤتمتاً بالكامل ومرتبط ببرنامج [ ${selectedSource === 'mohaseb' ? 'محاسب سوفت' : selectedSource === 'excel' ? 'جداول إكسل' : selectedSource} ] بطريقة فائقة الصمت لتسهيل المعاملات اليومية للتاجر.`
+                        : `Catalog indices are bound and synced dynamically in backend intervals.`}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-950 p-5 rounded-2xl border border-slate-850 space-y-4">
+                    <div>
+                      <h5 className="text-xs font-black text-slate-350">{language === 'AR' ? 'جدولة وتكرار التحديث التلقائي:' : 'Schedule automatic check polling:'}</h5>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        {language === 'AR' ? 'حدد الوتيرة التلقائية ليقوم النظام بمراجعة قاعدة البيانات وتحديث أسعار البيع والمعرض تلقائياً.' : 'Determine recurrent checking periods.'}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-900 pb-4">
+                      <label className="text-[11px] text-slate-400 font-bold">{language === 'AR' ? 'تفعيل جدول المزامنة المستمرة بالخلفية:' : 'Enable Continuous Background Sync:'}</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsWizardAutoSync(!isWizardAutoSync);
+                          localStorage.setItem('import_wizard_auto_sync', String(!isWizardAutoSync));
+                        }}
+                        className="flex items-center gap-1.5 focus:outline-none cursor-pointer"
+                      >
+                        {isWizardAutoSync ? (
+                          <span className="text-emerald-400 font-black flex items-center gap-1 text-xs">
+                            <span>{language === 'AR' ? 'مفعل وتلقائي نشط' : 'Active Polling 🟢'}</span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 text-xs font-bold">{language === 'AR' ? 'جرد يدوي فقط' : 'Manual purge actions only'}</span>
+                        )}
+                        {isWizardAutoSync ? <ToggleRight className="w-9 h-9 text-emerald-500" /> : <ToggleLeft className="w-9 h-9 text-slate-650" />}
+                      </button>
+                    </div>
+
+                    {isWizardAutoSync && (
+                      <div className="flex flex-col gap-2.5 animate-fadeIn">
+                        <label className="text-[11px] text-slate-400 font-bold">{language === 'AR' ? 'تكرار التحديث والمطابقة اللحظية:' : 'Sync Period Interval:'}</label>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 font-mono text-center">
+                          {[
+                            { id: '5_min', labelAR: 'كل 5 دقائق', labelEN: '5 Mins' },
+                            { id: '10_min', labelAR: 'كل 10 دقائق', labelEN: '10 Mins' },
+                            { id: '30_min', labelAR: 'كل 30 دقيقة', labelEN: '30 Mins' },
+                            { id: 'hourly', labelAR: 'كل ساعة 🕒', labelEN: 'Hourly' },
+                            { id: 'daily', labelAR: 'كل يوم 📅', labelEN: 'Daily' }
+                          ].map((freq) => (
+                            <button
+                              key={freq.id}
+                              type="button"
+                              onClick={() => {
+                                setWizardSyncFrequency(freq.id);
+                                localStorage.setItem('import_wizard_sync_freq', freq.id);
+                              }}
+                              className={`p-2.5 rounded-xl border text-center transition-all text-[11px] font-black cursor-pointer ${
+                                wizardSyncFrequency === freq.id
+                                  ? 'bg-indigo-950/40 border-indigo-500 text-indigo-300'
+                                  : 'bg-slate-900 border-slate-850 text-slate-400 hover:border-slate-800'
+                              }`}
+                            >
+                              {language === 'AR' ? freq.labelAR : freq.labelEN}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetWizardState();
+                        alert(language === 'AR' ? 'تم قفل وحفظ الإعدادات النهائية بنجاح وتم ربط متجرك ببرنامج المحل بنشاط كامل!' : 'Sync parameters consolidated successfully!');
+                      }}
+                      className="py-3 px-8 bg-gradient-to-r from-emerald-500 to-indigo-600 text-slate-950 font-black text-xs rounded-xl hover:opacity-95 shadow-lg shadow-indigo-950/30 cursor-pointer"
+                    >
+                      {language === 'AR' ? 'حفظ الحقول والعودة للوحة الجرد 🏁' : 'Lock Sync parameters & Return 🏁'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP FOOTER CONTROLS */}
+              {wizardStep < 7 && (
+                <div className="flex items-center justify-between border-t border-slate-800/80 pt-5 mt-6 font-sans">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleWizardPrev}
+                      disabled={wizardStep === 1}
+                      className={`py-2 px-4 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border ${
+                        wizardStep === 1
+                          ? 'bg-slate-950/40 border-slate-900 text-slate-600 cursor-not-allowed'
+                          : 'bg-slate-950 border-slate-850 hover:bg-slate-900 text-slate-200'
+                      }`}
+                    >
+                      <span>{language === 'AR' ? '⬅ السابق' : 'Previous ⬅'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        saveWizardProgress();
+                        alert(language === 'AR' ? '💾 تم حفظ التقدم في هذه الخطوة بنجاح! يمكنك الخروج والعودة لتكملة الربط لاحقاً.' : '💾 Sync settings draft cached successfully in local browser space.');
+                      }}
+                      className="py-2 px-3.5 rounded-xl text-xs font-bold border border-slate-850 hover:bg-slate-900 text-slate-450 bg-slate-950 cursor-pointer flex items-center gap-1 transition-all"
+                    >
+                      <span>💾 {language === 'AR' ? 'حفظ التقدم ومتابعة لاحقاً' : 'Save Progress'}</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(language === 'AR' ? 'هل أنت متأكد من مسح كافة الخطوات وإعادة المعالج إلى البداية؟' : 'Reset all wizard parameters to default?')) {
+                          resetWizardState();
+                        }
+                      }}
+                      className="py-2 px-3.5 rounded-xl text-xs font-bold border border-slate-850 text-slate-600 hover:text-red-400 hover:bg-red-950/15 transition-all cursor-pointer bg-slate-950"
+                    >
+                      <span>🧹 {language === 'AR' ? 'إعادة ضبط' : 'Reset'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleWizardNext}
+                      disabled={
+                        (wizardStep === 3 && selectedMethod === 'backup' && !wizardBackupFileName) ||
+                        (wizardStep === 3 && selectedMethod === 'gdrive' && (!wizardGdriveEmail || !wizardGdriveLink))
+                      }
+                      className={`py-2.5 px-6 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                        (wizardStep === 3 && selectedMethod === 'backup' && !wizardBackupFileName) ||
+                        (wizardStep === 3 && selectedMethod === 'gdrive' && (!wizardGdriveEmail || !wizardGdriveLink))
+                          ? 'bg-slate-850 text-slate-550 border border-slate-800 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-amber-500 to-indigo-600 font-extrabold text-slate-950'
+                      }`}
+                    >
+                      <span>{language === 'AR' ? 'التالي ➡' : 'Next ➡'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
             </div>
+          </div>
+
+          {/* ADVANCED MODE COLLAPSIBLE DEVELOPER PANEL */}
+          <div className="mt-6 max-w-3xl border border-slate-850 rounded-3xl overflow-hidden shadow-lg">
+            <button
+              type="button"
+              onClick={() => setWizardAdvancedMode(!wizardAdvancedMode)}
+              className="flex items-center justify-between w-full p-4 bg-slate-900 hover:bg-slate-900/80 text-right font-sans transition-all cursor-pointer"
+              dir="rtl"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="p-1 px-1.5 bg-indigo-950 text-indigo-400 rounded-lg"><Sliders className="w-3.5 h-3.5" /></span>
+                <div className="text-right">
+                  <span className="text-xs font-black text-slate-100 flex items-center gap-1.5">
+                    <span>⚙️ {language === 'AR' ? 'الإعدادات المتقدمة للربط المباشر وقواعد الـ API (Advanced Mode)' : 'Advanced Configuration and direct API Routing'}</span>
+                    <span className="bg-red-550/10 text-red-400 text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">{language === 'AR' ? 'للمطورين فقط' : 'Dev Mode Only'}</span>
+                  </span>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">{language === 'AR' ? 'تعديل روابط الخوادم الفورية، رموز التوثيق SecTokens، الـ Webhooks وخريطة الـ JSON Schema.' : 'Manually adjust API endpoints, authentication keys, callback webhooks, and JSON maps.'}</span>
+                </div>
+              </div>
+              <span className="text-xs text-slate-500 font-semibold">{wizardAdvancedMode ? '▲ إغلاق' : '▼ توسيع'}</span>
+            </button>
+
+            {wizardAdvancedMode && (
+              <div className="bg-slate-950 p-6 border-t border-slate-850 space-y-6 text-right font-sans animate-fadeIn" dir="rtl">
+                <div>
+                  <h4 className="text-xs font-black text-slate-300 mb-1">{language === 'AR' ? '🔌 روابط وموجّهات الاتفاقيات (Endpoints Configuration):' : 'API Connection Properties:'}</h4>
+                  <p className="text-[10px] text-slate-500">{language === 'AR' ? 'التوجيهات المفتوحة والمصادقة للاتصال المباشر بقواعد بيانات الفروع أو المستودع.' : 'Define central REST integration ports.'}</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] text-slate-400 font-bold">{language === 'AR' ? 'رابط بوابة الدمج والاستيراد الأساسي (API URL):' : 'Primary API URL Endpoint:'}</label>
+                    <input
+                      type="text"
+                      value={config.integrationEndpoint || ''}
+                      onChange={(e) => {
+                        const updated = { ...config, integrationEndpoint: e.target.value };
+                        setConfig(updated);
+                        onConfigChanged(updated);
+                        saveItem('aldhibani_local_config', updated);
+                      }}
+                      placeholder="https://yourstore.net/api/v1/sync"
+                      className="bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl text-xs text-slate-200 font-mono text-left focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] text-slate-400 font-bold">{language === 'AR' ? 'مفتاح التحقق السري المصاحب للطلب (API Token):' : 'Secret Security Key (Authorization Token):'}</label>
+                    <input
+                      type="password"
+                      value={config.integrationApiKey || ''}
+                      onChange={(e) => {
+                        const updated = { ...config, integrationApiKey: e.target.value };
+                        setConfig(updated);
+                        onConfigChanged(updated);
+                        saveItem('aldhibani_local_config', updated);
+                      }}
+                      placeholder="ALDHB_SECURE_TOKEN_XXXX"
+                      className="bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl text-xs text-slate-200 font-mono text-left focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-900 pt-5 space-y-4">
+                  <div>
+                    <h4 className="text-xs font-black text-slate-350 mb-1">{language === 'AR' ? '🔗 روابط الـ Webhooks المتلقية للتحديثات الصادرة فورا:' : 'Outbound Webhooks Subscriptions:'}</h4>
+                    <p className="text-[10px] text-slate-500">{language === 'AR' ? 'إرسال بيانات العمليات والمبيعات تلقائياً إلى خوادم محاسب سوفت أو أونكس برو عند كل شراء.' : 'Transmit sales/invoice signals to external POS systems instantly upon purchase occurrences.'}</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] text-slate-400 font-bold">{language === 'AR' ? 'رابط الـ Webhook المستهدف:' : 'Webhook Endpoint Link:'}</label>
+                      <input
+                        type="text"
+                        defaultValue="https://yourstore.net/api/v1/webhooks/sales"
+                        className="bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl text-xs text-slate-300 font-mono text-left focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] text-slate-400 font-bold">{language === 'AR' ? 'الحدث النشط لتشغيل الـ Webhook:' : 'Fired Action Event:'}</label>
+                      <select className="bg-slate-900 border border-slate-800 p-2 rounded-xl text-xs text-slate-300 focus:outline-none">
+                        <option>{language === 'AR' ? 'عند قيد فاتورة مبيعات جديدة' : 'On Order Created'}</option>
+                        <option>{language === 'AR' ? 'عند جرد أو سداد دين' : 'On Debt Collected'}</option>
+                        <option>{language === 'AR' ? 'عند المزامنة وتغيير الأسعار' : 'On Catalog Re-balanced'}</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-900 pt-5 space-y-4">
+                  <div>
+                    <h4 className="text-xs font-black text-slate-350 mb-1">{language === 'AR' ? '🗂️ تعديل خريطة ومخطط حقول جداول الـ JSON (JSON Schema Settings):' : 'Custom JSON Compilation Schema:'}</h4>
+                    <p className="text-[10px] text-slate-500">{language === 'AR' ? 'تمثيل كودي لهيكل قراءة البيانات المجلوبة لمطابقة الأرقام والعناوين.' : 'Map incoming database keys to equivalent system model variables.'}</p>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <textarea
+                      rows={5}
+                      defaultValue={`{
+  "productModel": {
+    "sku": "products.id",
+    "title_arabic": "products.name_ar",
+    "price_yer": "products.price_yer",
+    "stock_qty": "products.stock",
+    "category_group": "products.category"
+  },
+  "debtModel": {
+    "account_number": "debt.id",
+    "customer_name": "debt.customer_name",
+    "amount_due": "debt.amount"
+  }
+}`}
+                      className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-xs text-indigo-400 font-mono text-left focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* PURGE / CLEAN SLATE UTILITY CARD */}
@@ -4223,31 +5525,45 @@ export default function Dashboard({
               </div>
               
               {inventorySubTab === 'PRODUCTS' && !isAddingProduct && !fullEditingProduct && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAddingProduct(true);
-                    setFullEditingProduct(null);
-                    setProductForm({
-                      id: `prod-${Date.now()}`,
-                      nameAR: '',
-                      nameEN: '',
-                      descriptionAR: '',
-                      descriptionEN: '',
-                      category: categories[0]?.id || 'PHYSICAL_GROCERY',
-                      brand: '',
-                      priceYER: 1000,
-                      imageUrl: 'https://images.unsplash.com/photo-1546054454-aa26e2b734c7?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-                      isAvailable: true,
-                      stock: 50,
-                      rechargeAmount: ''
-                    });
-                  }}
-                  className="px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-455 hover:to-indigo-555 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 shadow-lg select-none cursor-pointer self-start"
-                >
-                  <Plus className="w-4 h-4 text-slate-950" />
-                  <span>{language === 'AR' ? 'إضافة صنف جديد' : 'Add New Product'}</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleStartBatchImages}
+                    className="px-4 py-2.5 bg-slate-950 hover:bg-slate-900 text-cyan-400 border border-cyan-500/30 hover:border-cyan-500 font-black text-xs rounded-xl flex items-center gap-1.5 shadow-lg select-none cursor-pointer self-start transition-all"
+                  >
+                    <span>✨</span>
+                    <span>{language === 'AR' ? 'توليد الصور الناقصة بالذكاء الاصطناعي' : 'Generate Missing Product Images (AI)'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddingProduct(true);
+                      setFullEditingProduct(null);
+                      setProductForm({
+                        id: `prod-${Date.now()}`,
+                        nameAR: '',
+                        nameEN: '',
+                        descriptionAR: '',
+                        descriptionEN: '',
+                        category: categories[0]?.id || 'PHYSICAL_GROCERY',
+                        brand: '',
+                        priceYER: 1000,
+                        imageUrl: 'https://images.unsplash.com/photo-1546054454-aa26e2b734c7?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
+                        product_image_url: '',
+                        is_ai_suggested: false,
+                        ai_suggested_url: '',
+                        isAvailable: true,
+                        stock: 50,
+                        rechargeAmount: ''
+                      });
+                    }}
+                    className="px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-455 hover:to-indigo-555 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 shadow-lg select-none cursor-pointer self-start transition-all"
+                  >
+                    <Plus className="w-4 h-4 text-slate-950" />
+                    <span>{language === 'AR' ? 'إضافة صنف جديد' : 'Add New Product'}</span>
+                  </button>
+                </div>
               )}
 
               {inventorySubTab === 'CATEGORIES' && !isAddingCategory && !fullEditingCategory && (
@@ -4305,6 +5621,136 @@ export default function Dashboard({
 
             {inventorySubTab === 'PRODUCTS' ? (
               <>
+                {/* --- SMART AI BATCH IMAGE PROCESSING WORKSPACE --- */}
+                {batchActive && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="mb-8 p-6 bg-slate-950 border-2 border-cyan-500/30 rounded-3xl space-y-4 shadow-2xl relative overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="p-1.5 bg-cyan-500/10 text-cyan-400 rounded-lg animate-pulse text-lg">✨</span>
+                        <div>
+                          <h4 className="text-xs font-black text-cyan-400 tracking-wider uppercase">
+                            {language === 'AR' ? 'معالج التوليد الذكي للدفعة السلعية المتكاملة' : 'AI Autonomous Batch Image Assistant'}
+                          </h4>
+                          <p className="text-[10px] text-slate-500 mt-0.5 font-sans">
+                            {language === 'AR' ? `منتجات بانتظار الترشيح: ${batchMissingProducts.length - batchCurrentIndex} صنف ناقص` : `${batchMissingProducts.length - batchCurrentIndex} pending items`}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBatchActive(false);
+                          setBatchMissingProducts([]);
+                        }}
+                        className="text-slate-400 hover:text-slate-200 text-xs font-sans px-2.5 py-1 bg-slate-900 rounded-lg font-bold border border-slate-850 cursor-pointer"
+                      >
+                        {language === 'AR' ? 'إغلاق المعالج' : 'Cancel Batch'}
+                      </button>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                      <div 
+                        className="bg-cyan-450 bg-cyan-400 h-full transition-all duration-300"
+                        style={{ width: `${((batchCurrentIndex) / batchMissingProducts.length) * 100}%` }}
+                      />
+                    </div>
+
+                    {/* Content Section */}
+                    {batchMissingProducts[batchCurrentIndex] && (
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                        
+                        {/* Current target info */}
+                        <div className="lg:col-span-5 space-y-3 font-sans">
+                          <span className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md">
+                            {language === 'AR' ? 'مستهدف الجرد الحالي' : 'Active Target'}
+                          </span>
+                          
+                          <div>
+                            <h3 className="text-sm font-black text-white">
+                              {language === 'AR' ? batchMissingProducts[batchCurrentIndex].nameAR : batchMissingProducts[batchCurrentIndex].nameEN}
+                            </h3>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {language === 'AR' ? 'الرقم الفرعي الكودي:' : 'Product SKU:'} <code className="text-indigo-400 font-mono text-[11px]">{batchMissingProducts[batchCurrentIndex].id}</code>
+                            </p>
+                          </div>
+
+                          <div className="flex gap-4 border-t border-slate-900 pt-3 text-[11px]">
+                            <div>
+                              <span className="text-slate-500 block uppercase tracking-wider text-[9px]">{language === 'AR' ? 'القسم:' : 'Category:'}</span>
+                              <span className="text-slate-300 font-bold">
+                                {batchMissingProducts[batchCurrentIndex].category}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block uppercase tracking-wider text-[9px]">{language === 'AR' ? 'السعر الكاش:' : 'Selling Price:'}</span>
+                              <span className="text-emerald-400 font-bold font-mono">
+                                {batchMissingProducts[batchCurrentIndex].priceYER.toLocaleString()} {language === 'AR' ? 'ر.ي' : 'YER'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Suggested Image Box */}
+                        <div className="lg:col-span-4 flex flex-col items-center justify-center">
+                          <div className="w-full h-42 bg-slate-900 rounded-2xl relative overflow-hidden border border-slate-850 shadow-inner flex items-center justify-center">
+                            {batchLoading ? (
+                              <div className="flex flex-col items-center gap-2">
+                                <span className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin font-sans"></span>
+                                <span className="text-[10px] text-cyan-400 animate-pulse font-mono">{language === 'AR' ? 'توليد واقتراح من Gemini...' : 'Suggesting artwork via Gemini...'}</span>
+                              </div>
+                            ) : batchCurrentSuggested ? (
+                              <>
+                                <img
+                                  src={batchCurrentSuggested}
+                                  alt="Suggested"
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                                <div className="absolute top-2 left-2 z-10 bg-cyan-950/80 backdrop-blur-md border border-cyan-500/30 text-cyan-400 text-[10px] font-black px-2 py-0.5 rounded-md flex items-center gap-1 shadow-lg">
+                                  <span>✨</span>
+                                  <span>{language === 'AR' ? 'صورة توضيحية' : 'Illustrative'}</span>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="text-xs text-slate-500">{language === 'AR' ? 'بانتظار التحميل...' : 'Awaiting prompt...'}</div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Batch Decision Controls */}
+                        <div className="lg:col-span-3 flex flex-col justify-center gap-2">
+                          <button
+                            type="button"
+                            disabled={batchLoading || !batchCurrentSuggested}
+                            onClick={handleApproveBatchItem}
+                            className={`w-full py-2.5 bg-emerald-500 hover:bg-emerald-450 text-slate-950 text-xs font-black rounded-xl flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all ${
+                              batchLoading || !batchCurrentSuggested ? 'opacity-40 cursor-not-allowed' : ''
+                            }`}
+                          >
+                            ✔️ {language === 'AR' ? 'موافقة وحفظ الغلاف' : 'Approve & Apply'}
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={batchLoading}
+                            onClick={handleSkipBatchItem}
+                            className="w-full py-2.5 bg-slate-900 hover:bg-slate-850 text-slate-300 text-xs font-bold rounded-xl border border-slate-800 flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                          >
+                            ⏭️ {language === 'AR' ? 'تخطي هذا الصنف' : 'Skip & Next'}
+                          </button>
+                        </div>
+
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+
                 {/* Dynamic Product Form Panel (Expandable slide-down for Add/Edit) */}
                 {(isAddingProduct || fullEditingProduct) && (
               <motion.form
@@ -4340,7 +5786,7 @@ export default function Dashboard({
                     <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{language === 'AR' ? 'رقم الكود الفرعي (ID/كود):' : 'Unique ID / Code:'}</label>
                     <input
                       type="text"
-                      disabled={!!fullEditingProduct}
+                      disabled={!!fullEditingProduct || isGeneratingImage}
                       placeholder="eg. ph-el-honey5"
                       value={productForm.id}
                       onChange={(e) => setProductForm({ ...productForm, id: e.target.value })}
@@ -4354,10 +5800,11 @@ export default function Dashboard({
                     <input
                       type="text"
                       required
+                      disabled={isGeneratingImage}
                       placeholder="مثال: عسل سدر عاصم"
                       value={productForm.nameAR}
                       onChange={(e) => setProductForm({ ...productForm, nameAR: e.target.value })}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-705"
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-705 disabled:opacity-30"
                     />
                   </div>
 
@@ -4368,10 +5815,11 @@ export default function Dashboard({
                     </label>
                     <input
                       type="text"
+                      disabled={isGeneratingImage}
                       placeholder={language === 'AR' ? 'مثال: Premium Sidr Honey (أو فارغ لترجمته آليًا)' : 'eg. Premium Sidr Honey (or empty to auto-translate)'}
                       value={productForm.nameEN}
                       onChange={(e) => setProductForm({ ...productForm, nameEN: e.target.value })}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 font-mono"
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 font-mono disabled:opacity-30"
                     />
                   </div>
 
@@ -4382,9 +5830,10 @@ export default function Dashboard({
                       type="number"
                       required
                       min="1"
+                      disabled={isGeneratingImage}
                       value={productForm.priceYER}
                       onChange={(e) => setProductForm({ ...productForm, priceYER: Number(e.target.value) })}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono disabled:opacity-30"
                     />
                   </div>
 
@@ -4393,9 +5842,10 @@ export default function Dashboard({
                     <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{language === 'AR' ? 'الكمية المستودعية (المخزون):' : 'Warehouse Stock Count:'}</label>
                     <input
                       type="number"
+                      disabled={isGeneratingImage}
                       value={productForm.stock}
                       onChange={(e) => setProductForm({ ...productForm, stock: Number(e.target.value) })}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono disabled:opacity-30"
                     />
                   </div>
 
@@ -4403,9 +5853,10 @@ export default function Dashboard({
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">{language === 'AR' ? 'تصنيف الصنف (القسم الرئيسي):' : 'Category Section:'}</label>
                     <select
+                      disabled={isGeneratingImage}
                       value={productForm.category}
                       onChange={(e: any) => setProductForm({ ...productForm, category: e.target.value })}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-sans cursor-pointer focus:outline-none"
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-sans cursor-pointer focus:outline-none disabled:opacity-30"
                     >
                       {categories && categories.length > 0 ? (
                         categories.map((c) => (
@@ -4429,23 +5880,331 @@ export default function Dashboard({
                     <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{language === 'AR' ? 'العلامة التجارية / الشركة:' : 'Brand / Network Operator:'}</label>
                     <input
                       type="text"
+                      disabled={isGeneratingImage}
                       placeholder="eg. MTN, Sabafon, Ghee, Al-Okbi"
                       value={productForm.brand || ''}
                       onChange={(e) => setProductForm({ ...productForm, brand: e.target.value })}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-700"
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-700 disabled:opacity-30"
                     />
                   </div>
 
-                  {/* Image URL */}
-                  <div className="flex flex-col gap-1 md:col-span-2">
-                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{language === 'AR' ? 'رابط خادم الصورة للسلعة:' : 'Visual Image CDN URL:'}</label>
-                    <input
-                      type="text"
-                      placeholder="https://images.unsplash.com/..."
-                      value={productForm.imageUrl}
-                      onChange={(e) => setProductForm({ ...productForm, imageUrl: e.target.value })}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-705 font-mono"
-                    />
+                  {/* --- SMART AI & MANUAL IMAGE MANAGEMENT MODULE --- */}
+                  <div className="flex flex-col gap-3 md:col-span-3 bg-slate-900/60 p-5 rounded-2xl border border-slate-800 font-sans mt-2">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
+                      <span className="text-xs font-black text-cyan-400 flex items-center gap-1.5 uppercase tracking-wider">
+                        📸 {language === 'AR' ? 'نظام إدارة صور المنتجات الذكي' : 'Intelligent Smart Product Image Hub'}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono text-right">Image Service Layer v1.0</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                      {/* Left Block: Image Preview Canvas */}
+                      <div className="lg:col-span-4 flex flex-col gap-2">
+                        <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                          {language === 'AR' ? 'معاينة الغلاف الحي والمصدر:' : 'Live Artwork Preview & Source:'}
+                        </label>
+                        
+                        <div className="w-full h-48 bg-slate-950 rounded-2xl relative overflow-hidden border border-slate-850 shadow-inner flex flex-col items-center justify-center group/preview">
+                          {(() => {
+                            const activeDetails = (() => {
+                              // Priority 1: Admin custom image
+                              if (productForm.product_image_url && !productForm.is_ai_suggested) {
+                                return {
+                                  src: productForm.product_image_url,
+                                  isAi: false,
+                                  label: language === 'AR' ? 'صورة الإدارة' : 'Admin Custom Image',
+                                  color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                };
+                              }
+                              // Priority 2: Platform default
+                              if (productForm.imageUrl && productForm.imageUrl !== '' && !productForm.imageUrl.includes('placeholder') && !productForm.imageUrl.includes('picsum.photos/seed')) {
+                                return {
+                                  src: productForm.imageUrl,
+                                  isAi: false,
+                                  label: language === 'AR' ? 'صورة مكتبة المنصة' : 'Platform Library',
+                                  color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30'
+                                };
+                              }
+                              // Priority 3: AI-suggested picture
+                              if (productForm.product_image_url && productForm.is_ai_suggested) {
+                                return {
+                                  src: productForm.product_image_url,
+                                  isAi: true,
+                                  label: language === 'AR' ? 'صورة مقترحة بالذكاء الاصطناعي (موافق عليها)' : 'AI Suggested (Approved)',
+                                  color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30'
+                                };
+                              }
+                              if (productForm.ai_suggested_url) {
+                                return {
+                                  src: productForm.ai_suggested_url,
+                                  isAi: true,
+                                  label: language === 'AR' ? 'صورة مقترحة بالذكاء الاصطناعي' : 'AI Suggested',
+                                  color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30'
+                                };
+                              }
+                              // Priority 4: Auto-generated mockup placeholder
+                              const safeSeed = encodeURIComponent((productForm.nameEN || productForm.nameAR || 'product').toLowerCase().replace(/\s+/g, '-'));
+                              return {
+                                src: `https://picsum.photos/seed/${safeSeed}/600/450`,
+                                isAi: false,
+                                label: language === 'AR' ? 'صورة مولدة تلقائياً' : 'Auto-generated Showcase',
+                                color: 'bg-slate-800/50 text-slate-400 border-slate-700/30'
+                              };
+                            })();
+
+                            // If there is a pending, unapproved suggestion, override the preview to show it
+                            const displaySrc = pendingAiSuggestion || activeDetails.src;
+                            const isAiTagShowing = pendingAiSuggestion ? true : activeDetails.isAi;
+                            const srcLabel = pendingAiSuggestion 
+                              ? (language === 'AR' ? 'مراجعة اقتراح الذكاء الاصطناعي المعلق' : 'AI Pending Manager Review')
+                              : activeDetails.label;
+                            const srcColorClass = pendingAiSuggestion
+                              ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 animate-pulse'
+                              : activeDetails.color;
+
+                            return (
+                              <>
+                                <img
+                                  src={displaySrc}
+                                  alt="Preview"
+                                  className="w-full h-full object-cover group-hover/preview:scale-105 transition-transform duration-500"
+                                  referrerPolicy="no-referrer"
+                                />
+                                {isAiTagShowing && (
+                                  <div className="absolute top-2 left-2 z-15 bg-cyan-950/90 backdrop-blur-md border border-cyan-500/30 text-cyan-400 text-[10px] font-black px-2 py-0.5 rounded-md">
+                                    ✨ {language === 'AR' ? 'صورة توضيحية' : 'Illustrative'}
+                                  </div>
+                                )}
+                                <div className={`absolute bottom-2 right-2 left-2 z-15 backdrop-blur-md border text-[9px] font-black px-2 py-1 rounded-lg text-center ${srcColorClass}`}>
+                                  {srcLabel}
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      </div>
+
+                      {/* Right Block: Actions, Upload & Suggestion Controls */}
+                      <div className="lg:col-span-8 flex flex-col justify-between gap-4">
+                        {/* Interactive Drag and Drop Upload Dropzone Area */}
+                        <div>
+                          <input
+                            type="file"
+                            id="product-image-file-input"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                  setProductForm(prev => ({
+                                    ...prev,
+                                    product_image_url: reader.result as string,
+                                    is_ai_suggested: false
+                                  }));
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                          
+                          <div
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              setDragActive(true);
+                            }}
+                            onDragLeave={() => setDragActive(false)}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              setDragActive(false);
+                              const file = e.dataTransfer.files?.[0];
+                              if (file && file.type.startsWith('image/')) {
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                  setProductForm(prev => ({
+                                    ...prev,
+                                    product_image_url: reader.result as string,
+                                    is_ai_suggested: false
+                                  }));
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                            onClick={() => document.getElementById('product-image-file-input')?.click()}
+                            className={`border border-dashed rounded-2xl p-6 flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all duration-300 group/dropzone ${
+                              dragActive 
+                                ? 'border-cyan-500 bg-cyan-950/10' 
+                                : 'border-slate-800 bg-slate-950/40 hover:border-slate-700 hover:bg-slate-950/80'
+                            }`}
+                          >
+                            <span className="text-xl group-hover/dropzone:scale-105 transition-transform duration-300">📤</span>
+                            <span className="text-[11px] font-black text-slate-300 text-center">
+                              {language === 'AR' ? 'اسحب وصنف وصورتك هنا، أو انقر للتصفح' : 'Drag & drop product picture here, or click to browse'}
+                            </span>
+                            <span className="text-[9px] text-slate-500 text-center">
+                              {language === 'AR' ? 'يرجى اختيار ملف صور خفيف (PNG, JPG, WEBP)' : 'Supports PNG, JPG, WEBP formats'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Control buttons & Manual URL option */}
+                        <div className="flex flex-col gap-3">
+                          {/* Manual image URL override field */}
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                              {language === 'AR' ? 'أو أدخل رابط الصورة يدوياً:' : 'Or enter custom image URL manually:'}
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="https://images.unsplash.com/..."
+                              value={productForm.product_image_url}
+                              onChange={(e) => setProductForm({ ...productForm, product_image_url: e.target.value, is_ai_suggested: false })}
+                              className="bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-slate-400 placeholder-slate-800 font-mono focus:outline-none focus:border-cyan-500"
+                            />
+                          </div>
+
+                          {/* Action Bar */}
+                          <div className="flex flex-wrap gap-2.5">
+                            {/* AI Suggest button */}
+                            <button
+                              type="button"
+                              disabled={isGeneratingImage || !productForm.nameAR}
+                              onClick={async () => {
+                                if (!productForm.nameAR) {
+                                  alert(language === 'AR' ? 'يرجى كتابة اسم الصنف بالعربية أولاً حتى يحلله الذكاء الاصطناعي!' : 'Please enter product name in Arabic first for AI analysis!');
+                                  return;
+                                }
+                                setIsGeneratingImage(true);
+                                setPendingAiSuggestion(null);
+
+                                try {
+                                  const response = await fetch('/api/gemini/suggest-image', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      nameAR: productForm.nameAR,
+                                      nameEN: productForm.nameEN,
+                                      category: productForm.category,
+                                      descriptionAR: productForm.descriptionAR,
+                                      descriptionEN: productForm.descriptionEN
+                                    })
+                                  });
+
+                                  if (response.ok) {
+                                    const data = await response.json();
+                                    if (data.success && data.imageUrl) {
+                                      setPendingAiSuggestion(data.imageUrl); // show as pending
+                                      console.log("Smart AI image suggestion generated:", data);
+                                    } else {
+                                      alert(language === 'AR' ? 'فشل معالجة توليد الصورة المقترحة' : 'Failed to generate AI suggestion.');
+                                      setIsGeneratingImage(false);
+                                    }
+                                  } else {
+                                    alert(language === 'AR' ? 'فشل الاتصال بخدمة الذكاء الاصطناعي' : 'Could not contact AI service.');
+                                    setIsGeneratingImage(false);
+                                  }
+                                } catch (err) {
+                                  console.error("AI suggested image failed:", err);
+                                  alert(language === 'AR' ? 'حدث خطأ غير متوقع' : 'An error occurred.');
+                                  setIsGeneratingImage(false);
+                                }
+                              }}
+                              className={`px-4 py-2 text-xs font-black rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                isGeneratingImage 
+                                  ? 'bg-slate-900 border border-slate-800 text-slate-500' 
+                                  : 'bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20'
+                              }`}
+                            >
+                              {isGeneratingImage ? (
+                                <>
+                                  <span className="w-3 h-3 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></span>
+                                  <span>{language === 'AR' ? 'جاري تحليل الصنف وتوليد الصورة...' : 'Analyzing and Generating Artwork...'}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span>✨</span>
+                                  <span>{language === 'AR' ? 'اقتراح صورة ذكية بالذكاء الاصطناعي' : 'Generate Model AI Suggestion'}</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Delete custom image button */}
+                            {(productForm.product_image_url || productForm.ai_suggested_url) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setProductForm(prev => ({
+                                    ...prev,
+                                    product_image_url: '',
+                                    is_ai_suggested: false,
+                                    ai_suggested_url: ''
+                                  }));
+                                  setPendingAiSuggestion(null);
+                                }}
+                                className="px-4 py-2 border border-rose-950 text-rose-450 text-rose-400 hover:bg-rose-950/20 text-xs font-bold rounded-xl flex items-center gap-1 cursor-pointer"
+                              >
+                                🗑️ {language === 'AR' ? 'حذف الصورة والأصل' : 'Delete Custom Artwork'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Dedicated approval layout after AI generates an image */}
+                        <AnimatePresence>
+                          {pendingAiSuggestion && (
+                            <motion.div 
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -10 }}
+                              className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-xl flex flex-col gap-3 font-sans mt-2"
+                            >
+                              <div className="flex items-start gap-2">
+                                <span className="text-lg">📢</span>
+                                <div className="flex-1">
+                                  <h4 className="text-xs font-black text-amber-400">
+                                    {language === 'AR' ? 'بانتظار موافقة المدير على الصورة المقترحة' : 'Awaiting Admin Approval on Suggested Artwork'}
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-0.5">
+                                    {language === 'AR' 
+                                      ? 'هل ترغب في اعتماد وحفظ هذه الصورة المقترحة بالذكاء الاصطناعي كصورة توضيحية رسمية جديدة لهذا المنتج؟' 
+                                      : 'Do you want to approve and persist this custom AI suggested asset as the new official product visual?'}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setProductForm(prev => ({
+                                      ...prev,
+                                      product_image_url: pendingAiSuggestion,
+                                      is_ai_suggested: true, // yes, it is AI-suggested and saved!
+                                      ai_suggested_url: pendingAiSuggestion
+                                    }));
+                                    setPendingAiSuggestion(null);
+                                    setIsGeneratingImage(false);
+                                  }}
+                                  className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-450 text-slate-950 text-xs font-black rounded-lg cursor-pointer flex items-center gap-1"
+                                >
+                                  ✔️ {language === 'AR' ? 'نعم، موافقة وحفظ الصورة' : 'Accept & Deploy Image'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPendingAiSuggestion(null);
+                                    setIsGeneratingImage(false);
+                                  }}
+                                  className="px-3 py-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 text-xs font-bold rounded-lg cursor-pointer"
+                                >
+                                  ❌ {language === 'AR' ? 'رفض وإلغاء' : 'Reject & Dismiss'}
+                                </button>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Description AR */}
@@ -4765,6 +6524,9 @@ export default function Dashboard({
                                 brand: prod.brand || '',
                                 priceYER: prod.priceYER,
                                 imageUrl: prod.imageUrl,
+                                product_image_url: prod.product_image_url || '',
+                                is_ai_suggested: !!prod.is_ai_suggested,
+                                ai_suggested_url: prod.ai_suggested_url || '',
                                 isAvailable: prod.isAvailable,
                                 stock: prod.stock !== undefined ? prod.stock : 50,
                                 rechargeAmount: prod.rechargeAmount || ''
@@ -6094,6 +7856,35 @@ export default function Dashboard({
                         {'  '}<span className="text-amber-500">TO</span> authenticated{'\n'}
                         {'  '}<span className="text-amber-500">USING</span> (id = (auth.jwt() -&gt;&gt; <span className="text-emerald-450">'org_id'</span>)::uuid){'\n'}
                         {'  '}<span className="text-amber-500">WITH CHECK</span> (id = (auth.jwt() -&gt;&gt; <span className="text-emerald-450">'org_id'</span>)::uuid);
+                      </>
+                    ) : selectedSchemaTable === 'audit_log' ? (
+                      <>
+                        <span className="text-slate-500">-- 1. كود إنشاء دالة تتبع تغيير كلمات المرور (Audit Trigger)</span>{'\n'}
+                        <span className="text-amber-500">CREATE OR REPLACE FUNCTION</span> log_password_changes(){'\n'}
+                        <span className="text-amber-500">RETURNS TRIGGER AS $$</span>{'\n'}
+                        <span className="text-amber-500">BEGIN</span>{'\n'}
+                        {'  '}<span className="text-amber-500">IF</span> (OLD.password_hash <span className="text-amber-500">IS DISTINCT FROM</span> NEW.password_hash) <span className="text-amber-500">THEN</span>{'\n'}
+                        {'    '}<span className="text-amber-500">INSERT INTO</span> audit_log (action, operator, payload, created_at){'\n'}
+                        {'    '}<span className="text-amber-500">VALUES</span> ({'\n'}
+                        {'      '}<span className="text-emerald-450">'PASSWORD_CHANGE_SUCCESS'</span>,{'\n'}
+                        {'      '}NEW.username,{'\n'}
+                        {'      '}jsonb_build_object({'\n'}
+                        {'        '}<span className="text-emerald-450">'userId'</span>, NEW.id,{'\n'}
+                        {'        '}<span className="text-emerald-450">'status'</span>, <span className="text-emerald-450">'SUCCESS'</span>,{'\n'}
+                        {'        '}<span className="text-emerald-450">'timestamp'</span>, now(),{'\n'}
+                        {'        '}<span className="text-emerald-450">'type'</span>, <span className="text-emerald-450">'database_layer'</span>{'\n'}
+                        {'      '}),{'\n'}
+                        {'      '}now(){'\n'}
+                        {'    '});{'\n'}
+                        {'  '}<span className="text-amber-500">END IF</span>;{'\n'}
+                        {'  '}<span className="text-amber-500">RETURN NEW</span>;{'\n'}
+                        <span className="text-amber-500">END;</span>{'\n'}
+                        <span className="text-amber-500">$$ LANGUAGE</span> plpgsql;{'\n\n'}
+                        <span className="text-slate-500">-- 2. ربط الـ Trigger بجدول الموظفين staff_users</span>{'\n'}
+                        <span className="text-amber-500">CREATE TRIGGER</span> trg_log_password_changes{'\n'}
+                        {'  '}<span className="text-amber-500">AFTER UPDATE ON</span> staff_users{'\n'}
+                        {'  '}<span className="text-amber-500">FOR EACH ROW</span>{'\n'}
+                        {'  '}<span className="text-amber-500">EXECUTE FUNCTION</span> log_password_changes();
                       </>
                     ) : (
                       <>

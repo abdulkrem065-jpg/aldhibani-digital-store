@@ -2,7 +2,83 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
-import { Product, StoreConfig, Order, DebtRecord, StaffUser, CustomCategory } from './src/types';
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+import bcrypt from 'bcryptjs';
+import { Product, StoreConfig, Order, DebtRecord, StaffUser, CustomCategory, Banner } from './src/types';
+
+dotenv.config();
+
+// Initialize Supabase Client on the server side
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+
+let supabase: any = null;
+if (
+  supabaseUrl &&
+  supabaseAnonKey &&
+  supabaseUrl !== 'YOUR_SUPABASE_URL_HERE' &&
+  supabaseAnonKey !== 'YOUR_SUPABASE_ANON_KEY_HERE'
+) {
+  try {
+    supabase = createClient(supabaseUrl, supabaseAnonKey);
+    console.log('⚡ Supabase Client initialized successfully on the Node.js server!');
+  } catch (error) {
+    console.error('Failed to initialize Supabase client on server-side:', error);
+  }
+}
+
+const SALT_ROUNDS = 10;
+
+function hashPassword(password: string): string {
+  return bcrypt.hashSync(password, SALT_ROUNDS);
+}
+
+function verifyPassword(passwordPlain: string, storedHashOrPlain: string): boolean {
+  if (!storedHashOrPlain) return false;
+  if (storedHashOrPlain.startsWith('$2a$') || storedHashOrPlain.startsWith('$2b$') || storedHashOrPlain.startsWith('$2y$')) {
+    try {
+      return bcrypt.compareSync(passwordPlain, storedHashOrPlain);
+    } catch (e) {
+      console.error('Bcrypt comparison failed:', e);
+      return false;
+    }
+  }
+  return passwordPlain === storedHashOrPlain;
+}
+
+async function insertAuditLog(action: string, operator: string, payload: any) {
+  try {
+    if (supabase) {
+      const { error } = await supabase.from('audit_log').insert({
+        action,
+        operator,
+        payload,
+        created_at: new Date().toISOString()
+      });
+      if (error) {
+        console.warn('[Audit Log] Failed to write in Supabase:', error.message);
+      } else {
+        console.log('[Audit Log] Successfully written in Supabase:', action);
+      }
+    } else {
+      console.log('[Audit Log Fallback] Action:', action, 'Operator:', operator, 'Payload:', payload);
+    }
+  } catch (err) {
+    console.warn('[Audit Log Exception]:', err);
+  }
+}
+
+function getLocalDefaultPasswordForRole(role: string): string {
+  const adminPass = storeDatabase.config.adminPassword || '123';
+  const cashierPass = storeDatabase.config.cashierPassword || '123';
+  const telecomPass = storeDatabase.config.telecomPassword || '123';
+
+  if (role === 'ADMIN') return adminPass;
+  if (role === 'CASHIER') return cashierPass;
+  if (role === 'COMMUNICATIONS' || role === 'STORE_MANAGER') return telecomPass;
+  return '123';
+}
 
 // Initialize core server application
 const app = express();
@@ -29,7 +105,41 @@ const storeDatabase = {
     cashierPassword: '123',
     telecomPassword: '123',
     secureSystemToken: 'STABLE_LUXURY_HYPERMARKET_KEY_TOKEN_2026',
+    orgId: 'org-dhibani-vip',
   } as StoreConfig,
+
+  banners: [
+    {
+      id: 'bn-telecom',
+      organization_id: 'org-dhibani-vip',
+      title_ar: 'باقات شحن يمن موبايل وسبأفون الفورية بخصومات 10٪ 🔥',
+      title_en: 'Instant Recharges for Yemen Mobile & Sabafon with 10% Off 🔥',
+      image_url: 'https://images.unsplash.com/photo-1562408590-e32931084e23?w=1200&auto=format&fit=crop&q=80',
+      target_url: '/?category=DIGITAL_RECHARGE',
+      is_active: true,
+      sort_order: 1
+    },
+    {
+      id: 'bn-gaming',
+      organization_id: 'org-dhibani-vip',
+      title_ar: 'شحن شدات ببجي وجواهر فري فاير الفوري بأرخص الأسعار اليمني 🎮',
+      title_en: 'Instant PUBG UC & Free Fire Diamonds at the Best Rates 🎮',
+      image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&auto=format&fit=crop&q=80',
+      target_url: '/?category=DIGITAL_GAME',
+      is_active: true,
+      sort_order: 2
+    },
+    {
+      id: 'bn-electronics',
+      organization_id: 'org-dhibani-vip',
+      title_ar: 'أحدث الإلكترونيات والأجهزة الذكية بضمان حقيقي مستقر 💻',
+      title_en: 'Latest Smart Devices & Premium Electronics with Real Warranty 💻',
+      image_url: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=1200&auto=format&fit=crop&q=80',
+      target_url: '/?category=PHYSICAL_ELECTRONICS',
+      is_active: true,
+      sort_order: 3
+    }
+  ] as Banner[],
 
   categories: [
     { id: 'DIGITAL_RECHARGE', nameAR: 'فوري رصيد وباقات اتصالات', nameEN: 'Digital Recharges & Bundles', icon: 'Smartphone', color: 'from-slate-900 to-amber-950/20' },
@@ -352,57 +462,98 @@ const storeDatabase = {
 const DECLARED_STORE_ROUTER_AUTH_TOKEN = 'STABLE_LUXURY_HYPERMARKET_KEY_TOKEN_2026';
 
 // SECURE LOCAL LOGIN
-app.post('/api/auth/login', (req, res) => {
-  const { username, password, token } = req.body;
-  const currentToken = storeDatabase.config.secureSystemToken || DECLARED_STORE_ROUTER_AUTH_TOKEN;
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password, token } = req.body;
+    const currentToken = storeDatabase.config.secureSystemToken || DECLARED_STORE_ROUTER_AUTH_TOKEN;
 
-  // Option 1: Authenticated by absolute token
-  if (token === currentToken || token === DECLARED_STORE_ROUTER_AUTH_TOKEN) {
-    // Admin bypass with specific token
-    const adminUser = storeDatabase.staffUsers.find(u => u.role === 'ADMIN');
-    return res.json({
-      success: true,
-      token: currentToken,
-      user: adminUser
-    });
-  }
-
-  // Option 2: Username and password check
-  const staff = storeDatabase.staffUsers.find(
-    u => u.username.toLowerCase() === username?.toLowerCase()
-  );
-
-  if (staff) {
-    // Validate password based on corresponding role settings
-    let isValid = false;
-    const adminPass = storeDatabase.config.adminPassword || '123';
-    const cashierPass = storeDatabase.config.cashierPassword || '123';
-    const telecomPass = storeDatabase.config.telecomPassword || '123';
-
-    if (staff.role === 'ADMIN' && password === adminPass) {
-      isValid = true;
-    } else if (staff.role === 'CASHIER' && password === cashierPass) {
-      isValid = true;
-    } else if ((staff.role === 'COMMUNICATIONS' || staff.role === 'STORE_MANAGER') && password === telecomPass) {
-      isValid = true;
-    } else if (password === '123' || password === adminPass) {
-      // General backstop safety fallback
-      isValid = true;
-    }
-
-    if (isValid) {
+    // Option 1: Authenticated by absolute token
+    if (token === currentToken || token === DECLARED_STORE_ROUTER_AUTH_TOKEN) {
+      const adminUser = storeDatabase.staffUsers.find(u => u.role === 'ADMIN');
       return res.json({
         success: true,
-        token: currentToken, // Deliver token upon valid authentication
+        token: currentToken,
+        user: adminUser
+      });
+    }
+
+    if (!username || !password) {
+      return res.status(400).json({ error: 'يرجى إدخال اسم المستخدم وكلمة المرور!' });
+    }
+
+    let staff: any = null;
+    let isCloudUser = false;
+
+    // A. Attempt Supabase real-time auth lookup
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('staff_users')
+          .select('*')
+          .eq('username', username.trim());
+
+        if (!error && data && data.length > 0) {
+          const matched = data.find((u: any) => u.username.toLowerCase() === username.trim().toLowerCase());
+          if (matched) {
+            const storedSecret = matched.password_hash || matched.password;
+            if (storedSecret && verifyPassword(password, storedSecret)) {
+              staff = {
+                id: String(matched.id),
+                username: matched.username,
+                role: matched.role,
+                permissions: typeof matched.permissions === 'string' ? JSON.parse(matched.permissions) : (matched.permissions || { viewSales: true, viewRecharges: true, editInventory: true, manageStaff: false })
+              };
+              isCloudUser = true;
+
+              // Lazy Hash upgrade
+              if (!matched.password_hash && matched.password === password) {
+                const hash = hashPassword(password);
+                await supabase.from('staff_users').update({ password_hash: hash }).eq('id', matched.id);
+                console.log(`[Supabase Lazy Hash Upgrade] Password upgraded to password_hash successfully for ${username}!`);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Supabase Auth Server Side Error]', err);
+      }
+    }
+
+    // B. Fallback to local in-memory DB if not found or no Supabase
+    if (!staff) {
+      const localStaff = storeDatabase.staffUsers.find(
+        u => u.username.toLowerCase() === username.trim().toLowerCase()
+      );
+      if (localStaff) {
+        const localHashOrPlain = localStaff.password_hash || getLocalDefaultPasswordForRole(localStaff.role);
+        if (verifyPassword(password, localHashOrPlain)) {
+          staff = localStaff;
+        }
+      }
+    }
+
+    if (staff) {
+      await insertAuditLog(
+        'LOGIN_SUCCESS',
+        staff.username,
+        { role: staff.role, platform: isCloudUser ? 'SUPABASE_CLOUD' : 'FALLBACK_LOCAL_DB' }
+      );
+
+      return res.json({
+        success: true,
+        token: currentToken,
         user: staff
       });
     }
-  }
 
-  return res.status(401).json({
-    success: false,
-    message: 'المعلومات المدخلة غير صحيحة أو رمز التوثيق غير مطابق للرمز المستقر!'
-  });
+    return res.status(401).json({
+      success: false,
+      error: 'المعلومات المدخلة غير صحيحة أو رمز التوثيق غير مطابق للرمز المستقر!'
+    });
+  } catch (err: any) {
+    console.error('Login implementation error:', err);
+    return res.status(500).json({ error: 'حدث خطأ غير متوقع أثناء معالجة تسجيل الدخول.' });
+  }
 });
 
 // GET configuration
@@ -656,6 +807,72 @@ app.get('/api/categories', (req, res) => {
   res.json(storeDatabase.categories || []);
 });
 
+// GET banners
+app.get('/api/banners', (req, res) => {
+  res.json(storeDatabase.banners || []);
+});
+
+// POST edit or add banner
+app.post('/api/banners', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
+    return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
+  }
+
+  const { id, organization_id, title_ar, title_en, image_url, target_url, is_active, sort_order } = req.body;
+
+  if (!organization_id || !title_ar || !title_en || !image_url) {
+    return res.status(400).json({ error: 'من فضلك أدخل البيانات الأساسية للبنر!' });
+  }
+
+  if (!storeDatabase.banners) {
+    storeDatabase.banners = [];
+  }
+
+  const bannerId = id || `bn-${Date.now()}`;
+  const idx = storeDatabase.banners.findIndex(b => b.id === bannerId);
+
+  const bannerData: Banner = {
+    id: bannerId,
+    organization_id,
+    title_ar,
+    title_en,
+    image_url,
+    target_url: target_url || '',
+    is_active: is_active !== undefined ? Boolean(is_active) : true,
+    sort_order: sort_order !== undefined ? Number(sort_order) : 0
+  };
+
+  if (idx !== -1) {
+    storeDatabase.banners[idx] = bannerData;
+    res.json({ success: true, banner: storeDatabase.banners[idx] });
+  } else {
+    storeDatabase.banners.push(bannerData);
+    res.json({ success: true, banner: bannerData });
+  }
+});
+
+// DELETE banner
+app.post('/api/banners/delete', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
+    return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
+  }
+
+  const { id } = req.body;
+  if (!storeDatabase.banners) {
+    storeDatabase.banners = [];
+  }
+
+  const idx = storeDatabase.banners.findIndex(b => b.id === id);
+  if (idx !== -1) {
+    const deleted = storeDatabase.banners.splice(idx, 1)[0];
+    res.json({ success: true, banner: deleted });
+  } else {
+    res.status(404).json({ error: 'البنر غير موجود!' });
+  }
+});
+
 // POST edit or add custom category
 app.post('/api/categories', (req, res) => {
   const authHeader = req.headers.authorization;
@@ -733,7 +950,11 @@ app.post('/api/products', (req, res) => {
     return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
   }
 
-  const { id, priceYER, isAvailable, nameAR, nameEN, descriptionAR, descriptionEN, stock, category, imageUrl, brand, rechargeAmount } = req.body;
+  const { 
+    id, priceYER, isAvailable, nameAR, nameEN, descriptionAR, descriptionEN, 
+    stock, category, imageUrl, brand, rechargeAmount,
+    product_image_url, is_ai_suggested, ai_suggested_url
+  } = req.body;
   
   // Find or create
   const idx = storeDatabase.products.findIndex(p => p.id === id);
@@ -751,6 +972,9 @@ app.post('/api/products', (req, res) => {
       imageUrl: imageUrl !== undefined ? imageUrl : storeDatabase.products[idx].imageUrl,
       brand: brand !== undefined ? brand : storeDatabase.products[idx].brand,
       rechargeAmount: rechargeAmount !== undefined ? rechargeAmount : storeDatabase.products[idx].rechargeAmount,
+      product_image_url: product_image_url !== undefined ? product_image_url : storeDatabase.products[idx].product_image_url,
+      is_ai_suggested: is_ai_suggested !== undefined ? Boolean(is_ai_suggested) : storeDatabase.products[idx].is_ai_suggested,
+      ai_suggested_url: ai_suggested_url !== undefined ? ai_suggested_url : storeDatabase.products[idx].ai_suggested_url,
     };
     res.json({ success: true, product: storeDatabase.products[idx] });
   } else {
@@ -767,7 +991,10 @@ app.post('/api/products', (req, res) => {
       isAvailable: isAvailable !== undefined ? Boolean(isAvailable) : true,
       stock: stock !== undefined ? Number(stock) : 50,
       brand: brand,
-      rechargeAmount: rechargeAmount
+      rechargeAmount: rechargeAmount,
+      product_image_url: product_image_url,
+      is_ai_suggested: is_ai_suggested,
+      ai_suggested_url: ai_suggested_url,
     };
     storeDatabase.products.push(newProd);
     res.json({ success: true, product: newProd });
@@ -930,66 +1157,274 @@ app.post('/api/staff/update-permissions', (req, res) => {
 });
 
 // POST staff password change (self)
-app.post('/api/staff/change-password', (req, res) => {
-  const { staffId, currentPassword, newPassword } = req.body;
-  const staff = storeDatabase.staffUsers.find(s => s.id === staffId);
-  if (!staff) {
-    return res.status(404).json({ error: 'الموظف غير موجود!' });
+app.post('/api/staff/change-password', async (req, res) => {
+  try {
+    const { staffId, currentPassword, newPassword } = req.body;
+    
+    if (!staffId || !currentPassword || !newPassword) {
+      await insertAuditLog(
+        'PASSWORD_CHANGE_FAILED',
+        'unknown',
+        {
+          userId: staffId || 'unknown',
+          status: 'FAILED',
+          reason: 'missing_fields',
+          timestamp: new Date().toISOString()
+        }
+      );
+      return res.status(400).json({ error: 'يرجى تقديم كافة الحقول المطلوبة لتغيير كلمة المرور!' });
+    }
+
+    if (newPassword.length < 3) {
+      let username = 'unknown';
+      const found = storeDatabase.staffUsers.find(s => s.id === staffId);
+      if (found) {
+        username = found.username;
+      } else if (supabase) {
+        try {
+          const { data } = await supabase.from('staff_users').select('username').eq('id', staffId);
+          if (data && data.length > 0) username = data[0].username;
+        } catch (e) {}
+      }
+
+      await insertAuditLog(
+        'PASSWORD_CHANGE_FAILED',
+        username,
+        {
+          userId: staffId,
+          status: 'FAILED',
+          reason: 'password_too_short',
+          timestamp: new Date().toISOString()
+        }
+      );
+      return res.status(400).json({ error: 'كلمة المرور الجديدة قصيرة جداً! يجب أن تكون 3 أحرف على الأقل.' });
+    }
+
+    let staff: any = null;
+    let isCloudUser = false;
+    let existingSecret: string | null = null;
+
+    // A. Try Supabase cloud lookup
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('staff_users')
+          .select('*')
+          .eq('id', staffId);
+
+        if (!error && data && data.length > 0) {
+          const matched = data[0];
+          existingSecret = matched.password_hash || matched.password || '';
+          if (verifyPassword(currentPassword, existingSecret)) {
+            staff = matched;
+            isCloudUser = true;
+          }
+        }
+      } catch (err) {
+        console.error('[Supabase Change Password Lookup Error]', err);
+      }
+    }
+
+    // B. Fallback to local in-memory lookup
+    if (!staff) {
+      const localStaff = storeDatabase.staffUsers.find(s => s.id === staffId);
+      if (localStaff) {
+        existingSecret = localStaff.password_hash || getLocalDefaultPasswordForRole(localStaff.role);
+        if (verifyPassword(currentPassword, existingSecret)) {
+          staff = localStaff;
+        }
+      }
+    }
+
+    if (!staff) {
+      let userExists = false;
+      let existingUsername = 'unknown';
+      if (supabase) {
+        try {
+          const { data } = await supabase.from('staff_users').select('id, username').eq('id', staffId);
+          if (data && data.length > 0) {
+            userExists = true;
+            existingUsername = data[0].username;
+          }
+        } catch (e) {}
+      }
+      if (!userExists) {
+        const found = storeDatabase.staffUsers.find(s => s.id === staffId);
+        if (found) {
+          userExists = true;
+          existingUsername = found.username;
+        }
+      }
+
+      if (userExists) {
+        await insertAuditLog(
+          'PASSWORD_CHANGE_FAILED',
+          existingUsername,
+          {
+            userId: staffId,
+            status: 'FAILED',
+            reason: 'incorrect_current_password',
+            timestamp: new Date().toISOString()
+          }
+        );
+        return res.status(400).json({ error: 'كلمة المرور الحالية غير صحيحة!' });
+      } else {
+        await insertAuditLog(
+          'PASSWORD_CHANGE_FAILED',
+          'unknown',
+          {
+            userId: staffId,
+            status: 'FAILED',
+            reason: 'user_not_found',
+            timestamp: new Date().toISOString()
+          }
+        );
+        return res.status(404).json({ error: 'الموظف المستهدف غير موجود في النظام!' });
+      }
+    }
+
+    // Hash the new password securely
+    const newHash = hashPassword(newPassword);
+
+    // Update staff_users in Supabase
+    if (isCloudUser && supabase) {
+      const { error: updateErr } = await supabase
+        .from('staff_users')
+        .update({
+          password_hash: newHash,
+          password: null
+        })
+        .eq('id', staffId);
+
+      if (updateErr) {
+        console.error('[Supabase Update Password Error]', updateErr);
+        await insertAuditLog(
+          'PASSWORD_CHANGE_FAILED',
+          staff.username,
+          {
+            userId: staffId,
+            status: 'FAILED',
+            reason: `supabase_update_error: ${updateErr.message}`,
+            timestamp: new Date().toISOString()
+          }
+        );
+        return res.status(500).json({ error: `فشل تحديث البيانات في Supabase: ${updateErr.message}` });
+      }
+    }
+
+    // Sync to local state
+    const localIdx = storeDatabase.staffUsers.findIndex(s => s.id === staffId);
+    if (localIdx !== -1) {
+      storeDatabase.staffUsers[localIdx].password_hash = newHash;
+    }
+
+    // Sync back to configurations
+    if (staff.role === 'ADMIN') {
+      storeDatabase.config.adminPassword = newPassword;
+    } else if (staff.role === 'CASHIER') {
+      storeDatabase.config.cashierPassword = newPassword;
+    } else if (staff.role === 'COMMUNICATIONS' || staff.role === 'STORE_MANAGER') {
+      storeDatabase.config.telecomPassword = newPassword;
+    }
+
+    // Record inside audit_log
+    await insertAuditLog(
+      'PASSWORD_CHANGED',
+      staff.username,
+      { staffId, role: staff.role, source: isCloudUser ? 'SUPABASE_CLOUD' : 'FALLBACK_LOCAL_DB' }
+    );
+
+    return res.json({
+      success: true,
+      message: 'تم تغيير كلمة المرور بنجاح.'
+    });
+
+  } catch (err: any) {
+    console.error('[Change Password API Error]', err);
+    return res.status(500).json({ error: err.message || 'فشل الاتصال بالخادم أثناء تحديث كلمة المرور.' });
   }
-
-  // To check previous password: in fallback mode we verify against local config
-  const adminPass = storeDatabase.config.adminPassword || '123';
-  const cashierPass = storeDatabase.config.cashierPassword || '123';
-  const telecomPass = storeDatabase.config.telecomPassword || '123';
-  
-  let actualPass = staff.password || '123';
-  if (staff.role === 'ADMIN') actualPass = adminPass;
-  else if (staff.role === 'CASHIER') actualPass = cashierPass;
-  else if (staff.role === 'COMMUNICATIONS') actualPass = telecomPass;
-
-  if (currentPassword !== actualPass) {
-    return res.status(400).json({ error: 'كلمة المرور الحالية غير صحيحة!' });
-  }
-
-  staff.password = newPassword;
-
-  // Sync to config as well
-  if (staff.role === 'ADMIN') {
-    storeDatabase.config.adminPassword = newPassword;
-  } else if (staff.role === 'CASHIER') {
-    storeDatabase.config.cashierPassword = newPassword;
-  } else if (staff.role === 'COMMUNICATIONS') {
-    storeDatabase.config.telecomPassword = newPassword;
-  }
-
-  res.json({ success: true, message: 'تم تغيير كلمة المرور بنجاح!' });
 });
 
 // POST staff password reset/override (Admin/Manager only can restore other staff passwords)
-app.post('/api/staff/reset-password', (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
-    return res.status(403).json({ error: 'صلاحيات غير كافية!' });
+app.post('/api/staff/reset-password', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
+      return res.status(403).json({ error: 'صلاحيات غير كافية!' });
+    }
+
+    const { staffId, newPassword } = req.body;
+    if (!staffId || !newPassword) {
+      return res.status(400).json({ error: 'بيانات غير مكتملة!' });
+    }
+
+    if (newPassword.length < 3) {
+      return res.status(400).json({ error: 'كلمة المرور قصيرة جداً! يجب أن تكون 3 أحرف على الأقل.' });
+    }
+
+    const newHash = hashPassword(newPassword);
+    let staff: any = null;
+    let isCloudUser = false;
+
+    // A. Supabase Update
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('staff_users')
+          .select('*')
+          .eq('id', staffId);
+
+        if (!error && data && data.length > 0) {
+          staff = data[0];
+          const { error: updateErr } = await supabase
+            .from('staff_users')
+            .update({
+              password_hash: newHash,
+              password: null
+            })
+            .eq('id', staffId);
+
+          if (!updateErr) {
+            isCloudUser = true;
+          }
+        }
+      } catch (err) {
+        console.error('[Supabase Reset Password Error]', err);
+      }
+    }
+
+    // B. Fallback in-memory
+    const localIdx = storeDatabase.staffUsers.findIndex(s => s.id === staffId);
+    if (localIdx !== -1) {
+      if (!staff) staff = storeDatabase.staffUsers[localIdx];
+      storeDatabase.staffUsers[localIdx].password_hash = newHash;
+    }
+
+    if (!staff) {
+      return res.status(404).json({ error: 'الموظف غير موجود!' });
+    }
+
+    // Sync back to config as well
+    if (staff.role === 'ADMIN') {
+      storeDatabase.config.adminPassword = newPassword;
+    } else if (staff.role === 'CASHIER') {
+      storeDatabase.config.cashierPassword = newPassword;
+    } else if (staff.role === 'COMMUNICATIONS' || staff.role === 'STORE_MANAGER') {
+      storeDatabase.config.telecomPassword = newPassword;
+    }
+
+    // Record inside audit_log
+    await insertAuditLog(
+      'PASSWORD_RESET_BY_ADMIN',
+      'ADMIN',
+      { staffId, targetUsername: staff.username, source: isCloudUser ? 'SUPABASE_CLOUD' : 'FALLBACK_LOCAL_DB' }
+    );
+
+    return res.json({ success: true, message: 'تم إعادة تعيين كلمة المرور بنجاح!' });
+  } catch (err: any) {
+    console.error('[Reset Password API Error]', err);
+    return res.status(500).json({ error: err.message || 'خطأ في معالجة إعادة تعيين كلمة المرور.' });
   }
-
-  const { staffId, newPassword } = req.body;
-  const staff = storeDatabase.staffUsers.find(s => s.id === staffId);
-  if (!staff) {
-    return res.status(404).json({ error: 'الموظف غير موجود!' });
-  }
-
-  staff.password = newPassword;
-
-  // Sync back to config as well
-  if (staff.role === 'ADMIN') {
-    storeDatabase.config.adminPassword = newPassword;
-  } else if (staff.role === 'CASHIER') {
-    storeDatabase.config.cashierPassword = newPassword;
-  } else if (staff.role === 'COMMUNICATIONS') {
-    storeDatabase.config.telecomPassword = newPassword;
-  }
-
-  res.json({ success: true, message: 'تم إعادة تعيين كلمة المرور بنجاح!' });
 });
 
 // LAZY INITIALIZATION OF SERVER-SIDE GEMINI API KEY TO PREVENT FAILURE
@@ -1056,6 +1491,116 @@ app.post('/api/gemini/translate', async (req, res) => {
   } catch (error: any) {
     console.error("Gemini Translation Error:", error);
     res.status(500).json({ error: error?.message || 'Error executing AI translation' });
+  }
+});
+
+// AI PRODUCT IMAGE SUGGESTION & GENERATION ENDPOINT
+app.post('/api/gemini/suggest-image', async (req, res) => {
+  const { nameAR, nameEN, category, descriptionAR, descriptionEN } = req.body;
+  if (!nameAR && !nameEN) {
+    return res.status(400).json({ error: 'الاسم المراد تحليله حقل إجباري!' });
+  }
+
+  try {
+    const aiInstance = getGeminiClient();
+    let searchKeyword = 'product';
+    let imagePrompt = `A high quality professional product shot of ${nameEN || nameAR}, clean studio lighting, isolated on solid background`;
+    
+    if (aiInstance) {
+      try {
+        // Fetch keyword and prompt from Gemini 3.5-flash
+        const analyzeResponse = await aiInstance.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: `You are an AI product photographer. Analyze this item:
+Name (Arabic): ${nameAR || ''}
+Name (English): ${nameEN || ''}
+Description (Arabic): ${descriptionAR || ''}
+Description (English): ${descriptionEN || ''}
+Category: ${category || ''}
+
+Provide a JSON object containing:
+1. "searchKeyword": a clean, single-word or short English keyword/phrase (e.g. 'headphone', 'simcard', 'honey', 'laptop') suitable for looking up stock photos on high-quality CDNs.
+2. "imagePrompt": a detailed, professional photography prompt (e.g. "Studio photo of a high-end luxury smartphone on a dark slate background, octane render, photorealistic") for an AI image generator.
+
+Ensure your response is valid JSON only. Do not output markdown codeblocks around it, just raw JSON.`,
+          config: {
+            responseMimeType: 'application/json'
+          }
+        });
+
+        const textResponse = analyzeResponse.text?.trim() || '{}';
+        // Clean markdown JSON boundaries if any
+        const cleanedJson = textResponse.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+        const parsed = JSON.parse(cleanedJson);
+        if (parsed.searchKeyword) searchKeyword = parsed.searchKeyword;
+        if (parsed.imagePrompt) imagePrompt = parsed.imagePrompt;
+      } catch (err) {
+        console.warn('Gemini details analysis failed, using fallback:', err);
+      }
+
+      // Try generating real image via gemini-2.5-flash-image
+      try {
+        const imageGenResponse = await aiInstance.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: {
+            parts: [{ text: imagePrompt }]
+          },
+          config: {
+            imageConfig: {
+              aspectRatio: '1:1'
+            }
+          }
+        });
+
+        if (imageGenResponse.candidates?.[0]?.content?.parts) {
+          for (const part of imageGenResponse.candidates[0].content.parts) {
+            if (part.inlineData?.data) {
+              const base64Str = part.inlineData.data;
+              return res.json({
+                success: true,
+                imageUrl: `data:image/png;base64,${base64Str}`,
+                isAiGenerated: true,
+                source: 'GEMINI_IMAGEN',
+                keyword: searchKeyword
+              });
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn('Direct Imagen generation failed, falling back to curated CDN matching:', err.message);
+      }
+    }
+
+    // Curated high quality CDN matching using searchKeyword or categories
+    const term = searchKeyword.toLowerCase();
+    const prodName = (nameEN || nameAR || 'product').toLowerCase();
+    let fallbackUrl = `https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&q=80`; // default stylish pattern
+
+    if (term.includes('phone') || term.includes('yemen mobile') || prodName.includes('موبايل') || prodName.includes('ym-')) {
+      fallbackUrl = 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=600&q=80';
+    } else if (term.includes('game') || term.includes('pubg') || term.includes('card') || term.includes('free fire') || prodName.includes('ببجي') || prodName.includes('بلاتينوم')) {
+      fallbackUrl = 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=600&q=80';
+    } else if (term.includes('honey') || term.includes('sweet') || prodName.includes('عسل') || prodName.includes('تموين')) {
+      fallbackUrl = 'https://images.unsplash.com/photo-1471193945509-9ad0617afabf?w=600&q=80';
+    } else if (term.includes('laptop') || term.includes('computer') || term.includes('electronics') || prodName.includes('أجهزة') || prodName.includes('سماعة')) {
+      fallbackUrl = 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=600&q=80';
+    } else {
+      // Dynamic Picsum seed based on product keywords
+      const seed = encodeURIComponent(prodName.replace(/\s+/g, '-'));
+      fallbackUrl = `https://picsum.photos/seed/${seed}/600/450`;
+    }
+
+    return res.json({
+      success: true,
+      imageUrl: fallbackUrl,
+      isAiGenerated: false, // fallback images are stock CDN
+      source: 'CURATED_CDN',
+      keyword: searchKeyword
+    });
+
+  } catch (ex: any) {
+    console.error('Suggest image error:', ex);
+    return res.status(500).json({ error: ex.message || 'فشل في توليد الصورة المقترحة' });
   }
 });
 

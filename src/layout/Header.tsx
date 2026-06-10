@@ -10,6 +10,7 @@ import {
   HelpCircle, ClipboardList, CheckCircle2, Clock, Truck, Play, RefreshCw, X, LogOut, ShoppingCart, Share2 
 } from 'lucide-react';
 import { Language, Currency, StaffUser, StoreConfig, Order, Product } from '../types';
+import { t } from '../lib/translations';
 
 interface HeaderProps {
   language: Language;
@@ -26,6 +27,7 @@ interface HeaderProps {
   onAddToCart: (p: Product) => void;
   cartCount: number;
   onOpenCart: () => void;
+  onTriggerAI: () => void;
 }
 
 export default function Header({
@@ -42,7 +44,8 @@ export default function Header({
   isAdminView,
   onAddToCart,
   cartCount,
-  onOpenCart
+  onOpenCart,
+  onTriggerAI
 }: HeaderProps) {
   // Voice & Speech Recognition States (Web Speech API)
   const [isListening, setIsListening] = useState(false);
@@ -54,13 +57,6 @@ export default function Header({
   const [trackingError, setTrackingError] = useState('');
   const [showTrackerModal, setShowTrackerModal] = useState(false);
   const [isSearchingOrder, setIsSearchingOrder] = useState(false);
-
-  // AI Assistant states
-  const [showAIAgent, setShowAIAgent] = useState(false);
-  const [aiChatInput, setAiChatInput] = useState('');
-  const [chatHistory, setChatHistory] = useState<{ sender: 'user' | 'bot'; text: string; isAction?: boolean }[]>([]);
-  const [aiLoading, setAiLoading] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Initialize Web Speech API
   useEffect(() => {
@@ -77,11 +73,7 @@ export default function Header({
 
       rec.onresult = (e: any) => {
         const transcript = e.results[0][0].transcript;
-        if (showAIAgent) {
-          setAiChatInput(transcript);
-        } else {
-          setSearchQuery(transcript);
-        }
+        setSearchQuery(transcript);
         setIsListening(false);
       };
 
@@ -95,19 +87,11 @@ export default function Header({
 
       recognitionRef.current = rec;
     }
-  }, [language, showAIAgent, setSearchQuery]);
-
-  // Scroll to bottom of chat
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory]);
+  }, [language, setSearchQuery]);
 
   const toggleListening = () => {
     if (!recognitionRef.current) {
-      alert(language === 'AR' 
-        ? 'التعرف على الصوت غير مدعوم في متصفحك الحالي.' 
-        : 'Voice recognition is not supported in this browser.'
-      );
+      alert(t('errors.voice_not_supported', language));
       return;
     }
 
@@ -135,16 +119,13 @@ export default function Header({
         if (found) {
           setTrackedOrder(found);
         } else {
-          setTrackingError(language === 'AR' 
-            ? 'لم نجد طلباً بهذا الكود. يرجى التأكد وإعادة المحاولة.' 
-            : 'Order code not found. Please review and try again.'
-          );
+          setTrackingError(t('errors.order_not_found', language));
         }
       } else {
-        setTrackingError(language === 'AR' ? 'حدث خطأ بالاتصال بالشبكة يرجى المحاولة لاحقاً.' : 'Network error.');
+        setTrackingError(t('errors.network_error', language));
       }
     } catch (err) {
-      setTrackingError(language === 'AR' ? 'فشل في الاتصال بمحرك التتبع.' : 'Tracking server is unresponsive.');
+      setTrackingError(t('errors.tracking_failed', language));
     } finally {
       setIsSearchingOrder(false);
     }
@@ -212,20 +193,11 @@ export default function Header({
   };
 
   const getOrderStatusLabel = (status: string) => {
-    if (language === 'AR') {
-      switch (status) {
-        case 'PENDING': return 'قيد الانتظار';
-        case 'PROCESSING': return 'جاري التجهيز والشحن';
-        case 'COMPLETED': return 'تم التسليم بنجاح';
-        default: return 'ملغي';
-      }
-    } else {
-      switch (status) {
-        case 'PENDING': return 'Pending Review';
-        case 'PROCESSING': return 'Processing & Dispatching';
-        case 'COMPLETED': return 'Delivered successfully';
-        default: return 'Cancelled';
-      }
+    switch (status) {
+      case 'PENDING': return t('tracking.received', language);
+      case 'PROCESSING': return t('tracking.processing', language);
+      case 'COMPLETED': return t('tracking.completed', language);
+      default: return t('tracking.cancelled', language);
     }
   };
 
@@ -269,7 +241,7 @@ export default function Header({
           {/* Right text info */}
           <div className="text-slate-400 font-medium text-right sm:text-right hidden sm:block">
             {language === 'AR' 
-              ? '⚡ بوابة الذهيابي VIP: شحن ألعاب فوري، توابل فاخرة، وتموين بموثوقية فائقة'
+              ? '⚡ بوابة الذيباني VIP: شحن ألعاب فوري، توابل فاخرة، وتموين بموثوقية فائقة'
               : '⚡ Al-Dheebani VIP: Premium vouchers, pure honey & high-end spices'}
           </div>
 
@@ -277,7 +249,7 @@ export default function Header({
           <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3">
             {/* Currency Selector */}
             <div className="flex items-center gap-1">
-              <span className="text-[10px] text-slate-500">{language === 'AR' ? 'العملة:' : 'Currency:'}</span>
+              <span className="text-[10px] text-slate-500">{t('nav.currency', language)}</span>
               <button
                 type="button"
                 onClick={() => setCurrency('YER')}
@@ -289,7 +261,7 @@ export default function Header({
                 id="currency-nav-yer-custom"
                 title="Yemeni Rial"
               >
-                <span>🇾🇪 {language === 'AR' ? 'يمني' : 'YER'}</span>
+                <span>🇾🇪 {t('nav.yemeni_rial', language)}</span>
               </button>
               <span className="text-slate-800">|</span>
               <button
@@ -303,7 +275,7 @@ export default function Header({
                 id="currency-nav-sar-custom"
                 title="Saudi Riyal"
               >
-                <span>🇸🇦 {language === 'AR' ? 'سعودي' : 'Saudi'}</span>
+                <span>🇸🇦 {t('nav.saudi_riyal', language)}</span>
               </button>
             </div>
 
@@ -311,7 +283,7 @@ export default function Header({
 
             {/* Language Selector */}
             <div className="flex items-center gap-1">
-              <span className="text-[10px] text-slate-500">{language === 'AR' ? 'اللغة:' : 'Lang:'}</span>
+              <span className="text-[10px] text-slate-500">{t('nav.language', language)}</span>
               <button
                 type="button"
                 onClick={() => setLanguage('AR')}
@@ -347,12 +319,12 @@ export default function Header({
                     className={`px-1.5 py-0.5 rounded text-[10px] font-black transition-all flex items-center gap-1 ${
                       isAdminView 
                         ? 'bg-amber-500 text-slate-950 font-black' 
-                        : 'text-amber-400 hover:bg-slate-900 override:hover:text-amber-350'
+                        : 'text-amber-400 hover:bg-slate-900 override:hover:text-amber-300'
                     }`}
                     id="btn-admin-view-toggle"
                   >
                     <Shield className="w-2.5 h-2.5" />
-                    <span>{isAdminView ? (language === 'AR' ? 'المعرض' : 'Showroom') : (language === 'AR' ? 'لوحة التحكم' : 'Admin Panel')}</span>
+                    <span>{isAdminView ? t('nav.showroom', language) : t('nav.dashboard', language)}</span>
                   </button>
                   <button
                     onClick={onLogout}
@@ -412,7 +384,7 @@ export default function Header({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={language === 'AR' ? '🔍 ابحث هنا: باقة شحن، كود ألعاب، عسل...' : 'Search airtimes, games, honey...'}
+                placeholder={t('nav.search_placeholder', language)}
                 className="w-full pl-7 pr-7 py-1 bg-slate-950/80 text-right border border-slate-850 rounded-lg text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-[#facc15] transition-all"
               />
               {searchQuery && (
@@ -429,10 +401,10 @@ export default function Header({
               onClick={toggleListening}
               className={`p-1 rounded-lg border transition-all cursor-pointer flex items-center justify-center shrink-0 ${
                 isListening 
-                  ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' 
+                  ? 'bg-red-955 border-red-500 text-red-400 animate-pulse' 
                   : 'bg-slate-950 border-slate-850 text-amber-500 hover:border-amber-400'
               }`}
-              title={language === 'AR' ? 'البحث الصوتي' : 'Voice Search'}
+              title={t('nav.voice_search', language)}
             >
               {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
             </button>
@@ -458,29 +430,17 @@ export default function Header({
               }`}
             >
               <span>🏠</span>
-              <span>{language === 'AR' ? 'المعرض والسلع' : 'Catalog'}</span>
+              <span>{t('nav.showroom', language)}</span>
             </button>
 
-            {/* 2. המساعد الذكي AI */}
+            {/* 2. المساعد الذكي AI */}
             <button
               type="button"
-              onClick={() => {
-                setShowAIAgent(true);
-                if (chatHistory.length <= 1) {
-                  setChatHistory([
-                    { 
-                      sender: 'bot', 
-                      text: language === 'AR'
-                        ? 'أهلاً بك في خدمات ومستودعات الذيباني VIP! يمكنني إرشادك وتجهيز طلبياتك وإضافة كروت الألعاب فوريًا برقم الآيدي الخاص بك. كيف يمكنني خدمتك اليوم؟'
-                        : 'Welcome to Al-Dheebani VIP! I can guide your shopping, dispatch game vouchers, and top up credits. How can I assist you?'
-                    }
-                  ]);
-                }
-              }}
+              onClick={onTriggerAI}
               className="px-2 py-1 rounded-lg text-[10px] md:text-[11px] font-black bg-slate-950/60 hover:bg-slate-900 text-slate-100 border border-slate-800 hover:border-amber-400 cursor-pointer flex items-center gap-1 transition-all"
             >
               <span>🤖</span>
-              <span>{language === 'AR' ? 'المساعد' : 'AI Bot'}</span>
+              <span>{t('nav.bot', language)}</span>
             </button>
 
             {/* 3. تتبع الطلبات */}
@@ -490,7 +450,7 @@ export default function Header({
               className="px-2 py-1 rounded-lg text-[10px] md:text-[11px] font-black bg-slate-950/60 hover:bg-slate-900 text-slate-100 border border-slate-800 hover:border-amber-400 cursor-pointer flex items-center gap-1 transition-all"
             >
               <span>📋</span>
-              <span>{language === 'AR' ? 'تتبع' : 'Track'}</span>
+              <span>{t('nav.track', language)}</span>
             </button>
 
             {/* 4. السلة */}
@@ -500,7 +460,7 @@ export default function Header({
               id="cart-trigger-nav"
             >
               <ShoppingCart className="w-3.5 h-3.5 text-amber-500" />
-              <span>{language === 'AR' ? 'السلة' : 'Cart'}</span>
+              <span>{t('nav.cart', language)}</span>
               {cartCount > 0 && (
                 <span className="px-1 rounded bg-red-600 text-white font-bold leading-none text-[9px] min-w-4 text-center">
                   {cartCount}
@@ -512,153 +472,6 @@ export default function Header({
 
         </div>
 
-      </div>
-
-      {/* 5️⃣ AI FLOATING ASSISTANT DISPATCHER BUTTON & DRAWER (قسم AI الشامل والتحدث الصوتي) */}
-      <div className="fixed bottom-6 left-6 z-50">
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => {
-            setShowAIAgent(!showAIAgent);
-            if (chatHistory.length === 0) {
-              setChatHistory([
-                { 
-                  sender: 'bot', 
-                  text: language === 'AR'
-                    ? 'مرحباً بك! أنا مستشارك التسوقي لمشروع الطيب الفاخر. يمكنني البحث عن الباقات والأسعار وإضافتها لسلتك بالصوت! اسألني مثلاً: "أضف عسل سدر للسلة" أو "كم سعر شدات ببجي؟"'
-                    : 'Welcome! I am your AI curator. I can hunt recharges, list honey costs, and add products directly by speech. Say "add royal honey" or "how much is PUBG 660 UC?"'
-                }
-              ]);
-            }
-          }}
-          className="w-15 h-15 rounded-full bg-gradient-to-tr from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white flex items-center justify-center shadow-2xl border border-cyan-400/20 shadow-cyan-500/20 cursor-pointer relative"
-          id="btn-trigger-ai-bot"
-        >
-          <Bot className="w-7 h-7" />
-          <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-cyan-400"></span>
-          </span>
-        </motion.button>
-
-        {/* Expandable Assistant Drawer Panel */}
-        <AnimatePresence>
-          {showAIAgent && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 50, x: -20 }}
-              animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="absolute bottom-18 left-0 w-80 sm:w-96 bg-slate-900 border border-slate-700 rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[500px]"
-            >
-              {/* AI Header */}
-              <div className="bg-gradient-to-r from-cyan-900 to-slate-900 p-4 border-b border-cyan-800 flex justify-between items-center text-white">
-                <div className="flex items-center gap-2">
-                  <div className="p-1 px-2.5 rounded-xl bg-cyan-500 text-slate-950">
-                    <Sparkles className="w-4 h-4 text-slate-950 inline fill-slate-950 animate-bounce" />
-                    <span className="text-xs font-black font-mono ml-1">AI</span>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-black tracking-wide leading-none">{language === 'AR' ? 'محرك الذكاء الاصطناعي' : 'Super-Agent Chat'}</h3>
-                    <span className="text-[10px] text-cyan-300 font-mono">gemini-3.5-flash @ YER</span>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowAIAgent(false)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Chat Contents */}
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 scrollbar-none bg-slate-950">
-                {chatHistory.map((msg, i) => (
-                  <div 
-                    key={i} 
-                    className={`flex flex-col max-w-[85%] rounded-2xl p-3.5 text-xs leading-relaxed ${
-                      msg.sender === 'user'
-                        ? 'self-end bg-cyan-600 text-white rounded-tr-none'
-                        : msg.isAction 
-                          ? 'self-start bg-emerald-950/80 border border-emerald-800 text-emerald-300 rounded-tl-none font-bold'
-                          : 'self-start bg-slate-850 text-slate-200 rounded-tl-none border border-slate-800'
-                    }`}
-                  >
-                    <span>{msg.text}</span>
-                  </div>
-                ))}
-                {aiLoading && (
-                  <div className="self-start bg-slate-850 text-slate-500 rounded-2xl rounded-tl-none p-3.5 text-xs flex items-center gap-2 border border-slate-800">
-                    <RefreshCw className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-                    <span>{language === 'AR' ? 'جاري التفكير والتنشيط...' : 'Processing audio/semantic nodes...'}</span>
-                  </div>
-                )}
-                <div ref={chatEndRef} />
-              </div>
-
-              {/* Suggestions Panel */}
-              <div className="px-3 py-2 bg-slate-950 border-t border-slate-850 flex gap-1.5 overflow-x-auto scrollbar-none">
-                <button
-                  onClick={() => sendAIChatMessage(language === 'AR' ? 'أضف عسل سدر يمني ملكي فاخر' : 'Add royal yemeni honey')}
-                  className="text-[10px] px-2.5 py-1 bg-slate-900 border border-slate-800 hover:border-cyan-500 text-cyan-400 rounded-full flex-shrink-0 transition-all cursor-pointer"
-                >
-                  🐝 {language === 'AR' ? 'أضف عسل' : 'Add Honey'}
-                </button>
-                <button
-                  onClick={() => sendAIChatMessage(language === 'AR' ? 'ما هي باقات يمن موبايل المتوفرة؟' : 'What recharges are available?')}
-                  className="text-[10px] px-2.5 py-1 bg-slate-900 border border-slate-800 hover:border-cyan-500 text-cyan-400 rounded-full flex-shrink-0 transition-all cursor-pointer"
-                >
-                  📱 {language === 'AR' ? 'باقات الرصيد' : 'Telecoms'}
-                </button>
-                <button
-                  onClick={() => sendAIChatMessage(language === 'AR' ? 'كيف أشحن شدات ببجي؟' : 'How do I top up PUBG?')}
-                  className="text-[10px] px-2.5 py-1 bg-slate-900 border border-slate-800 hover:border-cyan-500 text-cyan-400 rounded-full flex-shrink-0 transition-all cursor-pointer"
-                >
-                  🎮 {language === 'AR' ? 'شحن ألعاب' : 'Game Cards'}
-                </button>
-              </div>
-
-              {/* Chat Input */}
-              <div className="p-3 bg-slate-900 border-t border-slate-800 flex gap-1.5">
-                <input
-                  type="text"
-                  value={aiChatInput}
-                  onChange={(e) => setAiChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      sendAIChatMessage();
-                    }
-                  }}
-                  placeholder={language === 'AR' ? 'اكتب أمرك أو سؤالك هنا...' : 'Type message or command...'}
-                  className="flex-1 bg-slate-950 text-xs text-slate-100 placeholder-slate-600 rounded-xl px-3 border border-slate-800 focus:outline-none focus:border-cyan-500"
-                  id="ai-control-input"
-                />
-                
-                {/* Micro Input */}
-                <button
-                  onClick={toggleListening}
-                  className={`p-2 rounded-xl border transition-all cursor-pointer ${
-                    isListening 
-                      ? 'bg-red-950 border-red-500 text-red-500 animate-pulse' 
-                      : 'bg-slate-955 border-slate-800 text-slate-450 hover:border-cyan-500 hover:text-cyan-400'
-                  }`}
-                  id="btn-voice-chat-control"
-                >
-                  <Mic className="w-4.5 h-4.5" />
-                </button>
-
-                <button
-                  onClick={() => sendAIChatMessage()}
-                  disabled={!aiChatInput.trim()}
-                  className="p-2 px-3.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-md transition-all disabled:opacity-30 cursor-pointer flex items-center justify-center"
-                  id="btn-send-chat"
-                >
-                  <Play className="w-3 h-3 fill-slate-950" />
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
       {/* 6️⃣ ORDER TRACKER DIALOG (تتبع الطلب) */}

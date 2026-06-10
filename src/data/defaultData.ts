@@ -3,7 +3,7 @@
  * Acts as the master client-side fallback if the Node.js/Express server is unreachable (Vercel static host)
  */
 
-import { Product, StoreConfig, CustomCategory, Order, DebtRecord, StaffUser } from '../types';
+import { Product, StoreConfig, CustomCategory, Order, DebtRecord, StaffUser, Banner } from '../types';
 
 export const DEFAULT_STORE_CONFIG: StoreConfig = {
   shopNameAR: 'مستودع ومتجر الذيباني VIP',
@@ -22,7 +22,41 @@ export const DEFAULT_STORE_CONFIG: StoreConfig = {
   cashierPassword: '123',
   telecomPassword: '123',
   secureSystemToken: 'STABLE_LUXURY_HYPERMARKET_KEY_TOKEN_2026',
+  orgId: 'org-dhibani-vip',
 };
+
+export const DEFAULT_BANNERS: Banner[] = [
+  {
+    id: 'bn-telecom',
+    organization_id: 'org-dhibani-vip',
+    title_ar: 'باقات شحن يمن موبايل وسبأفون الفورية بخصومات 10٪ 🔥',
+    title_en: 'Instant Recharges for Yemen Mobile & Sabafon with 10% Off 🔥',
+    image_url: 'https://images.unsplash.com/photo-1562408590-e32931084e23?w=1200&auto=format&fit=crop&q=80',
+    target_url: '/?category=DIGITAL_RECHARGE',
+    is_active: true,
+    sort_order: 1
+  },
+  {
+    id: 'bn-gaming',
+    organization_id: 'org-dhibani-vip',
+    title_ar: 'شحن شدات ببجي وجواهر فري فاير الفوري بأرخص الأسعار اليمني 🎮',
+    title_en: 'Instant PUBG UC & Free Fire Diamonds at the Best Rates 🎮',
+    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&auto=format&fit=crop&q=80',
+    target_url: '/?category=DIGITAL_GAME',
+    is_active: true,
+    sort_order: 2
+  },
+  {
+    id: 'bn-electronics',
+    organization_id: 'org-dhibani-vip',
+    title_ar: 'أحدث الإلكترونيات والأجهزة الذكية بضمان حقيقي مستقر 💻',
+    title_en: 'Latest Smart Devices & Premium Electronics with Real Warranty 💻',
+    image_url: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=1200&auto=format&fit=crop&q=80',
+    target_url: '/?category=PHYSICAL_ELECTRONICS',
+    is_active: true,
+    sort_order: 3
+  }
+];
 
 export const DEFAULT_CATEGORIES: CustomCategory[] = [
   { id: 'DIGITAL_RECHARGE', nameAR: 'فوري رصيد وباقات اتصالات', nameEN: 'Digital Recharges & Bundles', icon: 'Smartphone', color: 'from-slate-900 to-amber-950/20' },

@@ -1,8 +1,3 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -12,6 +7,7 @@ import {
 import { Product, CartItem, Currency, Language, StaffUser } from '../types';
 import { getSavedItem, saveItem, DEFAULT_ORDERS } from '../data/defaultData';
 import { SupabaseServerlessDB } from '../lib/supabase';
+import { t } from '../lib/translations';
 
 interface ProductCardProps {
   key?: any;
@@ -70,17 +66,17 @@ export function ProductCard({
 
     if (product.category === 'DIGITAL_RECHARGE') {
       if (!phoneNumber.trim()) {
-        setErrorMsg(language === 'AR' ? 'يرجى إدخال رقم الهاتف للشحن!' : 'Phone number is required!');
+        setErrorMsg(t('errors.phone_required', language));
         return;
       }
       if (!/^[057]\d{8}$/.test(phoneNumber.trim()) && phoneNumber.trim().length < 9) {
-        setErrorMsg(language === 'AR' ? 'يرجى التحقق من صحة رقم الهاتف اليمني!' : 'Invalid Yemeni phone format!');
+        setErrorMsg(t('errors.invalid_phone', language));
         return;
       }
       onAddToCart(product, 1, { phoneNumber: phoneNumber.trim() });
     } else {
       if (!playerId.trim()) {
-        setErrorMsg(language === 'AR' ? 'يرجى إدخال الآي دي ID اللاعب!' : 'Player ID is required!');
+        setErrorMsg(t('errors.player_id_required', language));
         return;
       }
       onAddToCart(product, 1, { playerId: playerId.trim() });
@@ -102,14 +98,14 @@ export function ProductCard({
         <span className={`text-[9px] font-black tracking-widest uppercase px-2.5 py-1 rounded-full shadow-md text-white ${
           isDigital ? 'bg-indigo-600/90' : 'bg-emerald-600/90'
         }`}>
-          {language === 'AR' 
-            ? (product.category === 'DIGITAL_RECHARGE' ? 'رصيد فوري' : product.category === 'DIGITAL_GAME' ? 'ألعاب' : product.category === 'PHYSICAL_GROCERY' ? 'تموين' : 'أجهزة')
-            : (product.category.replace('DIGITAL_', '').replace('PHYSICAL_', ''))
-          }
+          {product.category === 'DIGITAL_RECHARGE' ? t('product.digital_recharge', language) :
+           product.category === 'DIGITAL_GAME' ? t('product.digital_game', language) :
+           product.category === 'PHYSICAL_GROCERY' ? t('product.physical_grocery', language) :
+           t('product.physical_device', language)}
         </span>
         {product.stock !== undefined && product.stock <= 5 && (
           <span className="text-[9px] font-bold bg-amber-500 text-slate-900 px-2.5 py-1 rounded-full shadow-md animate-pulse">
-            {language === 'AR' ? `متبقي ${product.stock}` : `Stock ${product.stock}`}
+            {t('product.stock_left', language, { stock: product.stock })}
           </span>
         )}
       </div>
@@ -118,16 +114,49 @@ export function ProductCard({
         
         {/* Product Artwork image */}
         <div className="w-full h-44 rounded-2xl bg-slate-950 overflow-hidden relative border border-slate-850">
-          <img
-            src={product.imageUrl}
-            alt={product.nameEN}
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-          />
+          {(() => {
+            const resolved = (() => {
+              // Priority 1: Admin custom image (has product_image_url and is not AI suggested)
+              if (product.product_image_url && !product.is_ai_suggested) {
+                return { src: product.product_image_url, isAi: false };
+              }
+              // Priority 2: Platform library image (has imageUrl that's not a generic placeholder/picsum seed)
+              if (product.imageUrl && product.imageUrl !== '' && !product.imageUrl.includes('placeholder') && !product.imageUrl.includes('picsum.photos/seed')) {
+                return { src: product.imageUrl, isAi: false };
+              }
+              // Priority 3: AI Suggested image (either stored in ai_suggested_url or saved as approved with is_ai_suggested)
+              if (product.ai_suggested_url) {
+                return { src: product.ai_suggested_url, isAi: true };
+              }
+              if (product.product_image_url && product.is_ai_suggested) {
+                return { src: product.product_image_url, isAi: true };
+              }
+              // Priority 4: Auto-generated image (using standard picsum seed based on product title)
+              const safeSeed = encodeURIComponent((product.nameEN || product.nameAR || 'product').toLowerCase().replace(/\s+/g, '-'));
+              return { src: `https://picsum.photos/seed/${safeSeed}/600/450`, isAi: false };
+            })();
+
+            return (
+              <>
+                <img
+                  src={resolved.src}
+                  alt={product.nameEN}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+                {resolved.isAi && (
+                  <div className="absolute bottom-2 left-2 z-10 bg-cyan-950/80 backdrop-blur-md border border-cyan-500/30 text-cyan-400 text-[10px] font-black px-2 py-0.5 rounded-md flex items-center gap-1 shadow-lg">
+                    <span>✨</span>
+                    <span>{language === 'AR' ? 'صورة توضيحية' : 'Illustrative Image'}</span>
+                  </div>
+                )}
+              </>
+            );
+          })()}
           {product.stock === 0 && (
             <div className="absolute inset-0 bg-slate-950/80 flex items-center justify-center">
               <span className="text-red-400 font-extrabold text-sm border-2 border-red-500 px-4 py-1 rounded-xl rotate-12">
-                {language === 'AR' ? 'نفذت الكمية' : 'SOLD OUT'}
+                {t('product.sold_out', language)}
               </span>
             </div>
           )}
@@ -160,7 +189,7 @@ export function ProductCard({
           </span>
           {currency !== 'YER' && (
             <span className="text-[9px] text-slate-500 font-mono">
-              ≈ {product.priceYER.toLocaleString()} YER {language === 'AR' ? '(أساسي ثابت)' : '(stable base)'}
+              ≈ {product.priceYER.toLocaleString()} YER {t('product.stable_base', language)}
             </span>
           )}
         </div>
@@ -174,7 +203,7 @@ export function ProductCard({
             id={`btn-add-card-${product.id}`}
           >
             <Plus className="w-4 h-4" />
-            <span>{language === 'AR' ? 'شحن / إضافة' : 'Get Item'}</span>
+            <span>{t('product.get_item', language)}</span>
           </button>
         ) : (
           <button
@@ -200,14 +229,14 @@ export function ProductCard({
             <form onSubmit={handleConfirmDigitalAdd} className="flex flex-col gap-2.5">
               <span className="text-[10px] text-cyan-400 font-black uppercase tracking-wider flex items-center gap-1">
                 <Gamepad2 className="w-3.5 h-3.5" />
-                {language === 'AR' ? 'تأكيد معلومات الشحن الفوري' : 'Instantly Input Recharge ID'}
+                {t('product.recharge_confirm_title', language)}
               </span>
 
               {errorMsg && <p className="text-[10px] text-red-400 leading-tight bg-red-955/30 p-1.5 rounded">{errorMsg}</p>}
 
               {product.category === 'DIGITAL_RECHARGE' ? (
                 <div className="flex flex-col gap-1">
-                  <label className="text-[9px] text-slate-400 font-bold">{language === 'AR' ? 'رقم هاتف الشحن:' : 'Recharge Number:'}</label>
+                  <label className="text-[9px] text-slate-400 font-bold">{t('product.recharge_phone_label', language)}</label>
                   <input
                     type="tel"
                     required
@@ -220,7 +249,7 @@ export function ProductCard({
                 </div>
               ) : (
                 <div className="flex flex-col gap-1">
-                  <label className="text-[9px] text-slate-400 font-bold">{language === 'AR' ? 'رقم آيدي اللاعب (Player ID):' : 'Player ID (Voucher):'}</label>
+                  <label className="text-[9px] text-slate-400 font-bold">{t('product.player_id_label', language)}</label>
                   <input
                     type="text"
                     required
@@ -238,7 +267,7 @@ export function ProductCard({
                 className="w-full py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-black transition-all cursor-pointer"
                 id={`btn-confirm-add-${product.id}`}
               >
-                {language === 'AR' ? 'تأكيد وإدراج للسلة' : 'Add to Order Basket'}
+                {t('product.add_to_cart_btn', language)}
               </button>
             </form>
           </motion.div>
@@ -369,7 +398,7 @@ export function ShoppingCartDrawer({
       onClearCart();
       onNewOrderPlaced(); // Refresh state lists
     } catch (err) {
-      setErrorMessage(language === 'AR' ? 'فشل معالجة الطلب في القاعدة السحابية.' : 'Failed to register order in cloud database.');
+      setErrorMessage(t('errors.db_checkout_failed', language));
     } finally {
       setLoading(false);
     }
@@ -401,7 +430,7 @@ export function ShoppingCartDrawer({
               <div className="p-5 border-b border-slate-800 bg-slate-950 flex justify-between items-center text-white">
                 <div className="flex items-center gap-2">
                   <ShoppingCart className="w-5 h-5 text-cyan-400" />
-                  <span className="font-black text-lg tracking-wide">{language === 'AR' ? 'سلة المشتريات والخدمات مدمجة' : 'Unified Cart Drawer'}</span>
+                  <span className="font-black text-lg tracking-wide">{t('cart.title', language)}</span>
                 </div>
                 <button
                   onClick={onClose}
@@ -420,23 +449,21 @@ export function ShoppingCartDrawer({
                   </div>
                   
                   <div>
-                    <h3 className="text-xl font-black text-white">{language === 'AR' ? 'تهانينا! تم تأكيد عمليتك بنجاح' : 'Success! Your Order is Placed'}</h3>
+                    <h3 className="text-xl font-black text-white">{t('cart.success_header', language)}</h3>
                     <p className="text-slate-400 text-xs mt-1 leading-relaxed">
-                      {language === 'AR' 
-                        ? 'تم شحن الخدمات الرقمية وتدشين طرد التموين. يفضل حفظ كود التتبع الخاص بك لمراقبة عملية التوزيع.' 
-                        : 'Digital balance recharged and physical order registered under the local YER stable ledger.'}
+                      {t('cart.success_desc', language)}
                     </p>
                   </div>
 
                   <div className="bg-slate-900 p-4 border border-cyan-800 rounded-2xl w-full max-w-xs flex flex-col items-center">
-                    <span className="text-[10px] text-cyan-400 tracking-widest font-mono font-black mb-1">TRACKING SERIAL CODE</span>
+                    <span className="text-[10px] text-cyan-400 tracking-widest font-mono font-black mb-1">{t('cart.tracking_code_title', language)}</span>
                     <span className="text-2xl font-mono font-black text-white tracking-widest bg-slate-950 px-4 py-1.5 rounded-lg border border-slate-850 select-all shadow-inner">{successCode}</span>
                     <button
                       onClick={() => copyToClipboard(successCode)}
                       className="mt-3.5 px-3 py-1 bg-slate-800 border border-slate-700 hover:border-cyan-500 text-xs text-cyan-400 rounded-full flex items-center gap-1 font-bold cursor-pointer"
                     >
                       <Clipboard className="w-3.5 h-3.5" />
-                      <span>{language === 'AR' ? 'نسخ الكود' : 'Copy Serial'}</span>
+                      <span>{t('cart.copy_code', language)}</span>
                     </button>
                   </div>
 
@@ -450,7 +477,7 @@ export function ShoppingCartDrawer({
                     }}
                     className="w-full max-w-xs py-3 rounded-xl bg-slate-105 hover:bg-slate-205 text-slate-900 text-sm font-black transition-all cursor-pointer mt-4"
                   >
-                    {language === 'AR' ? 'العودة لمواصلة التسوق' : 'Back to Shopping Mall'}
+                    {t('cart.back_to_shop', language)}
                   </button>
                 </div>
               ) : (
@@ -462,15 +489,15 @@ export function ShoppingCartDrawer({
                         <div className="p-4 bg-slate-950 rounded-full border border-slate-850 text-slate-700 mb-2">
                           <ShoppingCart className="w-10 h-10 text-slate-700" />
                         </div>
-                        <h4 className="text-sm font-bold text-slate-300">{language === 'AR' ? 'سلة المشتريات فارغة تماماً' : 'Cart is Empty'}</h4>
-                        <p className="text-[11px] text-slate-500 max-w-xs leading-relaxed mt-1">{language === 'AR' ? 'تصفح أقسام رصيد يمن موبايل وباقات الألعاب والعسل والحليب لإضافتها وتسوق برغبة.' : 'Explore operator nodes or gourmet products to add items.'}</p>
+                        <h4 className="text-sm font-bold text-slate-300">{t('cart.empty', language)}</h4>
+                        <p className="text-[11px] text-slate-500 max-w-xs leading-relaxed mt-1">{t('cart.explore_prompt', language)}</p>
                       </div>
                     ) : (
                       <>
                         {/* Cart Items List */}
                         <div className="space-y-3.5">
                           <span className="text-[10px] text-slate-450 font-black tracking-widest uppercase border-b border-slate-850 pb-1.5 block">
-                            {language === 'AR' ? 'السلع والخدمات الحالية:' : 'CURRENT ITEMS:'}
+                            {t('cart.current_items', language)}
                           </span>
                           {cart.map((item) => (
                             <div key={item.product.id} className="bg-slate-950 rounded-2xl border border-slate-850 p-3.5 flex justify-between gap-3.5">
@@ -537,14 +564,14 @@ export function ShoppingCartDrawer({
                         {/* Customer Information Checkout Form */}
                         <form onSubmit={handleCheckoutSubmit} className="space-y-4 pt-4 border-t border-slate-850">
                           <span className="text-[10px] text-slate-450 font-black tracking-widest uppercase border-b border-slate-850 pb-1.5 block">
-                            {language === 'AR' ? 'معلومات الزبون والشحن:' : 'DELIVERY INFORMATION:'}
+                            {t('cart.delivery_info', language)}
                           </span>
 
                           {errorMessage && <p className="text-xs text-red-400 bg-red-955/35 p-2 rounded-xl text-center">{errorMessage}</p>}
 
                           {/* Full Name */}
                           <div className="flex flex-col gap-1">
-                            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{language === 'AR' ? 'الاسم الثلاثي:' : 'Full Name:'}</label>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t('cart.full_name', language)}</label>
                             <div className="relative">
                               <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                               <input
@@ -552,8 +579,8 @@ export function ShoppingCartDrawer({
                                 required
                                 value={customerName}
                                 onChange={(e) => setCustomerName(e.target.value)}
-                                placeholder={language === 'AR' ? 'أدخل اسمك الكامل' : 'Jane Doe'}
-                                className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs placeholder-slate-700 text-white"
+                                placeholder={t('cart.full_name_placeholder', language)}
+                                className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs placeholder-slate-705 text-white"
                                 id="checkout-customer-name"
                               />
                             </div>
@@ -561,7 +588,7 @@ export function ShoppingCartDrawer({
 
                           {/* Phone number */}
                           <div className="flex flex-col gap-1">
-                            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{language === 'AR' ? 'رقم الهاتف للتواصل المباشر:' : 'Direct Phone Contact:'}</label>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t('cart.phone_contact', language)}</label>
                             <div className="relative">
                               <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                               <input
@@ -570,7 +597,7 @@ export function ShoppingCartDrawer({
                                 value={customerPhone}
                                 onChange={(e) => setCustomerPhone(e.target.value)}
                                 placeholder="eg. 777123456"
-                                className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs placeholder-slate-700 text-white font-mono"
+                                className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs placeholder-slate-705 text-white font-mono"
                                 id="checkout-customer-phone"
                               />
                             </div>
@@ -578,64 +605,74 @@ export function ShoppingCartDrawer({
 
                           {/* Payment Method Selector Dropdown */}
                           <div className="flex flex-col gap-1">
-                            <label className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">{language === 'AR' ? 'طريقة الدفع المقررة:' : 'Payment Method:'}</label>
+                            <label className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">{t('cart.payment_method', language)}</label>
                             <select
-                              value={paymentMethod}
-                              onChange={(e) => setPaymentMethod(e.target.value)}
-                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
-                              id="checkout-payment-method"
-                            >
-                              {activePaymentMethods.map((meth) => (
-                                <option key={meth} value={meth} className="bg-slate-900 text-slate-100 text-xs">
-                                  {meth}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          {/* Cashier Box Office Selection */}
-                          <div className="flex flex-col gap-1">
-                            <label className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">{language === 'AR' ? 'الصندوق / المحاسب المستلم للعملية:' : 'Cashier Box Office:'}</label>
-                            <select
-                              value={cashierId}
-                              onChange={(e) => setCashierId(e.target.value)}
-                              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-cyan-500 cursor-pointer font-mono"
-                              id="checkout-cashier-id"
-                            >
-                              <option value="admin" className="bg-slate-900 text-slate-100">{language === 'AR' ? 'صندوق المدير الرئيسي (admin)' : 'Main Admin Box (admin)'}</option>
-                              <option value="cashier" className="bg-slate-900 text-slate-100">{language === 'AR' ? 'صندوق المبيعات الجاد (cashier)' : 'Main Sales Cashier (cashier)'}</option>
-                              <option value="telecom" className="bg-slate-900 text-slate-100">{language === 'AR' ? 'صندوق الاتصالات وباقات الفوري (telecom)' : 'Telecom Desk Box (telecom)'}</option>
-                              <option value="guest" className="bg-slate-900 text-slate-100">{language === 'AR' ? 'خدمة الزائر الذاتي (guest)' : 'Self-Service Terminal (guest)'}</option>
-                            </select>
-                          </div>
-
-                          {/* Instructions */}
-                          <div className="flex flex-col gap-1">
-                            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{language === 'AR' ? 'ملاحظات وتخصيصات باكيج الشحن:' : 'Special Instructions:'}</label>
-                            <textarea
-                              value={checkoutNotes}
-                              onChange={(e) => setCheckoutNotes(e.target.value)}
-                              placeholder={language === 'AR' ? 'يرجى الإسراع التلقائي للربط بالآيدي أو العنوان الفرعي للمواد المادية...' : 'e.g., Deliver honey package wrapped carefully.'}
-                              className="w-full py-2 px-3 bg-slate-950 border border-slate-800 rounded-xl text-xs placeholder-slate-705 text-white h-16 resize-none focus:outline-none"
-                              id="checkout-notes"
-                            />
-                          </div>
-
-                          {/* Trigger Purchase */}
-                          <button
-                            type="submit"
-                            disabled={loading || cart.length === 0}
-                            className="w-full py-3.5 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-455 hover:to-indigo-555 text-slate-950 rounded-xl font-black tracking-wide shadow-lg transition-all animate-shimmer cursor-pointer select-none text-sm leading-none"
-                            id="btn-cart-checkout-submit"
-                          >
-                            <div className="flex items-center justify-center gap-1">
-                              <CreditCard className="w-4 h-4 mr-1 text-slate-950 fill-transparent" />
-                              <span>{loading 
-                                ? (language === 'AR' ? 'جاري تقييد الطلب للشحن المزدوج...' : 'Processing Transaction...') 
-                                : (language === 'AR' ? 'تأكيد ودفع الفاتورة فوريًا' : 'Confirm & Validate Checkout')}
-                              </span>
+                                value={paymentMethod}
+                                onChange={(e) => setPaymentMethod(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
+                                id="checkout-payment-method"
+                              >
+                                {activePaymentMethods.map((meth) => (
+                                  <option key={meth} value={meth} className="bg-slate-900 text-slate-100 text-xs">
+                                    {meth}
+                                  </option>
+                                ))}
+                              </select>
                             </div>
-                          </button>
+
+                            {/* Cashier Box Office Selection */}
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">{t('cart.cashier_box', language)}</label>
+                              <select
+                                value={cashierId}
+                                onChange={(e) => setCashierId(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-cyan-500 cursor-pointer font-mono"
+                                id="checkout-cashier-id"
+                              >
+                                <option value="admin" className="bg-slate-900 text-slate-100">
+                                  {language === 'AR' ? 'صندوق المدير الرئيسي (admin)' : 'Main Admin Box (admin)'}
+                                </option>
+                                <option value="cashier" className="bg-slate-900 text-slate-100">
+                                  {language === 'AR' ? 'صندوق المبيعات الجاد (cashier)' : 'Main Sales Cashier (cashier)'}
+                                </option>
+                                <option value="telecom" className="bg-slate-900 text-slate-100">
+                                  {language === 'AR' ? 'صندوق الاتصالات وباقات الفوري (telecom)' : 'Telecom Desk Box (telecom)'}
+                                </option>
+                                <option value="guest" className="bg-slate-900 text-slate-100">
+                                  {language === 'AR' ? 'خدمة الزائر الذاتي (guest)' : 'Self-Service Terminal (guest)'}
+                                </option>
+                              </select>
+                            </div>
+
+                            {/* Instructions */}
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t('cart.special_notes', language)}</label>
+                              <textarea
+                                value={checkoutNotes}
+                                onChange={(e) => setCheckoutNotes(e.target.value)}
+                                placeholder={t('cart.notes_placeholder', language)}
+                                className="w-full py-2 px-3 bg-slate-950 border border-slate-800 rounded-xl text-xs placeholder-slate-705 text-white h-16 resize-none focus:outline-none"
+                                id="checkout-notes"
+                              />
+                            </div>
+
+                            {/* Trigger Purchase */}
+                            <button
+                              type="submit"
+                              disabled={loading || cart.length === 0}
+                              className="w-full py-3.5 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-455 hover:to-indigo-555 text-slate-950 rounded-xl font-black tracking-wide shadow-lg transition-all animate-shimmer cursor-pointer select-none text-sm leading-none"
+                              id="btn-cart-checkout-submit"
+                            >
+                              <div className="flex items-center justify-center gap-1">
+                                <CreditCard className="w-4 h-4 mr-1 text-slate-950 fill-transparent" />
+                                <span>
+                                  {loading 
+                                    ? t('cart.processing', language) 
+                                    : t('cart.confirm_btn', language)
+                                  }
+                                </span>
+                              </div>
+                            </button>
                         </form>
                       </>
                     )}
@@ -646,15 +683,15 @@ export function ShoppingCartDrawer({
                     <div className="p-5 border-t border-slate-800 bg-slate-950">
                       <div className="flex flex-col gap-1 text-xs">
                         <div className="flex justify-between text-slate-400">
-                          <span>{language === 'AR' ? 'المجموع الأساسي (بالريال اليمني):' : 'Stable Base Price (YER):'}</span>
+                          <span>{t('cart.base_total', language)}</span>
                           <span className="font-mono">{totalYER.toLocaleString()} YER</span>
                         </div>
                         <div className="flex justify-between text-slate-400 text-[10px]">
-                          <span>{language === 'AR' ? 'سعر صرف الصرف اليمني الفدرالي اليوم:' : 'Daily Fed Conversion Rates:'}</span>
+                          <span>{t('cart.conversion_rate', language)}</span>
                           <span className="font-mono">1 USD = {exchangeUSD} YER</span>
                         </div>
                         <div className="flex justify-between text-sm font-black text-white border-t border-slate-850 pt-2.5 mt-1.5">
-                          <span className="tracking-wide">{language === 'AR' ? 'الإجمالي بالعملة المحددة:' : 'GRAND TOTAL IN SELECTED CURRENCY:'}</span>
+                          <span className="tracking-wide">{t('cart.grand_total', language)}</span>
                           <span className="text-xl font-mono text-emerald-400">{convertPrice(totalYER)} {getCurrencySymbol()}</span>
                         </div>
                       </div>

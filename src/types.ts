@@ -47,6 +47,7 @@ export interface StaffUser {
   id: string;
   username: string;
   password?: string; // only stored securely or mocked in storage
+  password_hash?: string; // secure bcrypt hash
   role: UserRole;
   permissions: StaffPermissions;
   orgId?: string;
@@ -80,6 +81,7 @@ export interface StoreConfig {
   remoteSyncInterval?: number; // minutes
   remoteLastSyncTime?: string;
   remoteSyncStatus?: 'CONNECTED' | 'DISCONNECTED' | 'SYNCING';
+  orgId?: string;
 }
 
 export type ProductCategory = string;
@@ -102,6 +104,9 @@ export interface Product {
   brand?: string; // e.g. 'Yemen Mobile', ' Sabafon', 'YOU', 'Y', 'PUBG', 'Free Fire'
   priceYER: number; // base YER price
   imageUrl: string;
+  product_image_url?: string; // official image url override
+  is_ai_suggested?: boolean; // track if suggested by AI
+  ai_suggested_url?: string; // tracking the raw AI suggestion url
   isAvailable: boolean;
   stock?: number; // for physical items
   rechargeAmount?: string; // Digital value description
@@ -140,4 +145,15 @@ export interface DebtRecord {
   totalDebtYER: number;
   notes?: string;
   updatedAt: string;
+}
+
+export interface Banner {
+  id: string;
+  organization_id: string;
+  title_ar: string;
+  title_en: string;
+  image_url: string;
+  target_url?: string;
+  is_active: boolean;
+  sort_order: number;
 }

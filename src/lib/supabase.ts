@@ -4,10 +4,10 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Product, StoreConfig, CustomCategory, Order, DebtRecord, StaffUser } from '../types';
+import { Product, StoreConfig, CustomCategory, Order, DebtRecord, StaffUser, Banner } from '../types';
 import { 
   DEFAULT_STORE_CONFIG, DEFAULT_CATEGORIES, DEFAULT_PRODUCTS, 
-  DEFAULT_ORDERS, DEFAULT_DEBTS, DEFAULT_STAFF 
+  DEFAULT_ORDERS, DEFAULT_DEBTS, DEFAULT_STAFF, DEFAULT_BANNERS 
 } from '../data/defaultData';
 
 // Retrieve direct environment secrets for Supabase real-time connection
@@ -209,6 +209,31 @@ export class SupabaseServerlessDB {
     return newConfig;
   }
 
+  // --- BANNERS ---
+  static getBanners(): Banner[] {
+    return this.get<Banner[]>('aldhibani_local_banners', DEFAULT_BANNERS);
+  }
+
+  static saveBanner(banner: Banner): Banner[] {
+    const list = this.getBanners();
+    const idx = list.findIndex(b => b.id === banner.id);
+    if (idx !== -1) {
+      list[idx] = banner;
+    } else {
+      list.push(banner);
+    }
+    this.set('aldhibani_local_banners', list);
+    this.asyncUpsert('aldhibani_banners', banner);
+    return list;
+  }
+
+  static deleteBanner(id: string): Banner[] {
+    const list = this.getBanners().filter(b => b.id !== id);
+    this.set('aldhibani_local_banners', list);
+    this.asyncDelete('aldhibani_banners', id);
+    return list;
+  }
+
   // --- CATEGORIES ---
   static getCategories(): CustomCategory[] {
     return this.get<CustomCategory[]>('aldhibani_local_categories', DEFAULT_CATEGORIES);
@@ -339,42 +364,57 @@ export class SupabaseServerlessDB {
   }
 
   static async authenticateFromSupabase(username: string, passwordPlain: string): Promise<StaffUser | null> {
-    if (!supabase) return null;
     try {
-      const { data, error } = await supabase
-        .from('staff_users')
-        .select('*')
-        .eq('username', username.trim());
-      
-      if (error || !data || data.length === 0) {
-        return null;
-      }
-
-      const matched = data.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
-      if (matched) {
-        // Evaluate the raw password stored in the cloud table
-        if (matched.password && String(matched.password) === passwordPlain) {
-          // Parse permissions if stored as string JSON, or use as object
-          let permissionsObj = matched.permissions;
-          if (typeof permissionsObj === 'string') {
-            try {
-              permissionsObj = JSON.parse(permissionsObj);
-            } catch (e) {
-              permissionsObj = { viewSales: true, viewRecharges: true, editInventory: true, manageStaff: false };
-            }
-          }
-          return {
-            id: String(matched.id),
-            username: matched.username,
-            role: matched.role as any,
-            permissions: permissionsObj || { viewSales: true, viewRecharges: true, editInventory: true, manageStaff: false }
-          };
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: passwordPlain })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.user) {
+          return data.user;
         }
       }
       return null;
     } catch (err) {
-      console.warn('[Supabase Direct Auth] Failed lookup from staff_users:', err);
-      return null;
+      console.warn('[Supabase Direct Auth Client-Side Fallback]', err);
+      if (!supabase) return null;
+      try {
+        const { data, error } = await supabase
+          .from('staff_users')
+          .select('*')
+          .eq('username', username.trim());
+        
+        if (error || !data || data.length === 0) {
+          return null;
+        }
+
+        const matched = data.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
+        if (matched) {
+          const storedSecret = matched.password_hash || matched.password;
+          if (storedSecret && String(storedSecret) === passwordPlain) {
+            let permissionsObj = matched.permissions;
+            if (typeof permissionsObj === 'string') {
+              try {
+                permissionsObj = JSON.parse(permissionsObj);
+              } catch (e) {
+                permissionsObj = { viewSales: true, viewRecharges: true, editInventory: true, manageStaff: false };
+              }
+            }
+            return {
+              id: String(matched.id),
+              username: matched.username,
+              role: matched.role as any,
+              permissions: permissionsObj || { viewSales: true, viewRecharges: true, editInventory: true, manageStaff: false }
+            };
+          }
+        }
+        return null;
+      } catch (innerErr) {
+        console.warn('[Supabase Direct Auth] Failed lookup from staff_users:', innerErr);
+        return null;
+      }
     }
   }
 
