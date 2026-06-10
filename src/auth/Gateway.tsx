@@ -16,10 +16,11 @@ interface GatewayProps {
   storeNameAR: string;
   storeNameEN: string;
   logoEmoji: string;
+  logoImageUrl?: string;
   exchangeUSD: number;
 }
 
-export default function Gateway({ onBypass, onLoginSuccess, storeNameAR, storeNameEN, logoEmoji, exchangeUSD }: GatewayProps) {
+export default function Gateway({ onBypass, onLoginSuccess, storeNameAR, storeNameEN, logoEmoji, logoImageUrl, exchangeUSD }: GatewayProps) {
   const [lang, setLang] = useState<'AR' | 'EN'>('AR');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -29,6 +30,7 @@ export default function Gateway({ onBypass, onLoginSuccess, storeNameAR, storeNa
   const [errorMsg, setErrorMsg] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
+  const [authMode, setAuthMode] = useState<'GUEST' | 'STAFF'>('GUEST');
 
   // Handle traditional Login (Username and password '123' or direct token) via Serverless Cloud Database
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -111,7 +113,11 @@ export default function Gateway({ onBypass, onLoginSuccess, storeNameAR, storeNa
       {/* Top Bar with Language Toggle */}
       <div className="w-full flex justify-between items-center z-10 select-none pb-4 border-b border-slate-900">
         <div className="flex items-center gap-2">
-          <span className="text-xl">{logoEmoji}</span>
+          {logoImageUrl ? (
+            <img src={logoImageUrl} alt="Logo" className="w-[30px] h-[30px] object-contain rounded-lg border border-slate-800" referrerPolicy="no-referrer" />
+          ) : (
+            <span className="text-xl">{logoEmoji}</span>
+          )}
           <span className="font-semibold tracking-wide text-amber-400 font-mono text-sm uppercase">STABLE YER HUB</span>
         </div>
         <button
@@ -131,7 +137,11 @@ export default function Gateway({ onBypass, onLoginSuccess, storeNameAR, storeNa
         <div className="text-center pb-8 select-none" dir="rtl">
           <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-black rounded-lg uppercase tracking-wide mb-3">
             <span>⚜️</span>
-            <span>{logoEmoji}</span>
+            {logoImageUrl ? (
+              <img src={logoImageUrl} alt="Logo" className="w-5 h-5 object-contain rounded" referrerPolicy="no-referrer" />
+            ) : (
+              <span>{logoEmoji}</span>
+            )}
             <span>{lang === 'AR' ? 'مستودع ومتجر الذيباني VIP الشامل' : 'Al-Dheebani VIP Hybrid Warehouse'}</span>
           </div>
           <h1 className="text-3xl md:text-5xl font-extrabold text-white tracking-tight leading-tight">
@@ -146,7 +156,9 @@ export default function Gateway({ onBypass, onLoginSuccess, storeNameAR, storeNa
 
         {/* Slider has been repositioned inside the staff login card above login credentials */}
 
-        {/* 2️⃣ CENTRED PORTAL SUBHEADER */}
+        {authMode === 'GUEST' ? (
+          <>
+            {/* 2️⃣ CENTRED PORTAL SUBHEADER */}
         <div className="text-center py-2 mb-4 select-none z-10" dir="rtl">
           <h2 className="text-lg md:text-2xl font-black text-amber-500 tracking-tight flex items-center justify-center gap-2">
             <span>بوابات مستودع ومتجر الذيباني VIP الشامل</span>
@@ -231,14 +243,42 @@ export default function Gateway({ onBypass, onLoginSuccess, storeNameAR, storeNa
 
         </div>
 
-        {/* 4️⃣ STAFF SECURE PORTAL SIGN IN AT THE BOTTOM (ABOVE USERNAME AND PASSWORD) */}
-        <div className="max-w-md w-full mx-auto z-10 select-none">
-          <motion.div 
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="bg-slate-900/40 backdrop-blur-md rounded-3xl border border-slate-800 p-6 md:p-8 shadow-2xl relative"
+        {/* Accent Navigation Toggle Access for staff / admin */}
+        <div className="w-full flex justify-center z-10 select-none pb-6 animate-fadeIn">
+          <button
+            type="button"
+            onClick={() => setAuthMode('STAFF')}
+            className="px-6 py-3 rounded-full border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 text-xs text-amber-300 font-extrabold transition-all shadow-lg hover:border-amber-400/50 flex items-center gap-2 active:scale-95 cursor-pointer max-w-xs w-full justify-center"
+            id="btn-goto-staff-login"
           >
+            <Lock className="w-3.5 h-3.5 text-amber-500" />
+            <span>{lang === 'AR' ? 'بوابة الإدارة ودخول الكادر المالي 💼' : 'Staff & Financial Admin Login 💼'}</span>
+          </button>
+        </div>
+      </>
+    ) : (
+      /* 4️⃣ STAFF SECURE PORTAL SIGN IN (SECURELY FOCUSED IN ITS OWN VIEW WITH GO BACK OPTION) */
+      <div className="max-w-md w-full mx-auto z-10 select-none animate-fadeIn flex flex-col gap-4">
+        
+        {/* Go back action link */}
+        <div className="flex justify-start">
+          <button
+            type="button"
+            onClick={() => setAuthMode('GUEST')}
+            className="px-4 py-2 rounded-xl border border-slate-800 bg-slate-950 text-xs text-slate-300 hover:text-white hover:border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 font-sans"
+            id="btn-back-to-guest"
+          >
+            <ArrowLeftRight className="w-3.5 h-3.5 text-amber-500" />
+            <span>{lang === 'AR' ? 'الرجوع لبوابات تسوق الزوار' : 'Return to Guest Shopping'}</span>
+          </button>
+        </div>
+
+        <motion.div 
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="bg-slate-900/40 backdrop-blur-md rounded-3xl border border-slate-800 p-6 md:p-8 shadow-2xl relative"
+        >
             {/* Staff Card Ribbon */}
             <div className="absolute top-0 right-8 -translate-y-1/2 px-4 py-1.5 bg-amber-500/90 hover:bg-amber-600 rounded-full text-[10px] font-black text-slate-900 flex items-center gap-1 shadow-md font-mono">
               <ShieldAlert className="w-3 h-3" />
@@ -335,6 +375,51 @@ export default function Gateway({ onBypass, onLoginSuccess, storeNameAR, storeNa
                     title={`Slide ${idx + 1}`}
                   ></button>
                 ))}
+              </div>
+            </div>
+
+            <div className="mb-4 bg-slate-950/45 p-3 rounded-2xl border border-slate-800/60" dir={lang === 'AR' ? 'rtl' : 'ltr'}>
+              <div className="text-[10px] text-amber-400 font-extrabold mb-1.5 flex items-center gap-1.5">
+                <span>⚡</span>
+                <span>{lang === 'AR' ? 'تجرية سريعة كـ (انقر للملء التلقائي):' : 'Demo Mode (Click to Auto-fill):'}</span>
+              </div>
+              <div className="flex flex-wrap gap-2 justify-center md:justify-start">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsername('admin');
+                    setPassword('123');
+                    setShowTokenInput(false);
+                    setErrorMsg('');
+                  }}
+                  className="px-2.5 py-1 text-[10px] bg-amber-500/10 hover:bg-amber-500/25 text-amber-300 font-black rounded-lg border border-amber-500/25 transition-all active:scale-95 cursor-pointer"
+                >
+                  {lang === 'AR' ? '👤 المدير (admin)' : 'Admin'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsername('cashier');
+                    setPassword('123');
+                    setShowTokenInput(false);
+                    setErrorMsg('');
+                  }}
+                  className="px-2.5 py-1 text-[10px] bg-cyan-500/10 hover:bg-cyan-500/25 text-cyan-300 font-black rounded-lg border border-cyan-500/25 transition-all active:scale-95 cursor-pointer"
+                >
+                  {lang === 'AR' ? '💼 الكاشير (cashier)' : 'Cashier'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsername('telecom');
+                    setPassword('123');
+                    setShowTokenInput(false);
+                    setErrorMsg('');
+                  }}
+                  className="px-2.5 py-1 text-[10px] bg-purple-500/10 hover:bg-purple-500/25 text-purple-300 font-black rounded-lg border border-purple-500/25 transition-all active:scale-95 cursor-pointer"
+                >
+                  {lang === 'AR' ? '🔌 الاتصالات (telecom)' : 'Telecom'}
+                </button>
               </div>
             </div>
 
@@ -437,6 +522,7 @@ export default function Gateway({ onBypass, onLoginSuccess, storeNameAR, storeNa
             </form>
           </motion.div>
         </div>
+      )}
 
       </div>
 

@@ -9,12 +9,12 @@ import {
   Building, ShieldCheck, Users, Box, TrendingUp, AlertCircle, Edit3, Save, 
   Handshake, DollarSign, ListOrdered, ToggleLeft, ToggleRight, Check, CheckCircle2, RefreshCw,
   Plus, Trash2, Sparkles, Search, ClipboardList, Clock, Truck, X, FileText, Phone, User, HelpCircle, Layers, Printer,
-  Wifi, Cloud, Cpu, Database, Link
+  Wifi, Cloud, Cpu, Database, Link, Bot, MapPin, Terminal, Key
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell 
 } from 'recharts';
-import { StaffUser, StoreConfig, Product, Order, DebtRecord, Language, CustomCategory } from '../types';
+import { StaffUser, StoreConfig, Product, Order, DebtRecord, Language, CustomCategory, Organization, Branch, InventoryTransaction } from '../types';
 import { 
   getSavedItem, saveItem, 
   DEFAULT_STORE_CONFIG, DEFAULT_CATEGORIES, DEFAULT_PRODUCTS, DEFAULT_ORDERS, DEFAULT_DEBTS 
@@ -46,12 +46,64 @@ export default function Dashboard({
   products: initialProductsProp = [],
   onProductsChanged
 }: DashboardProps) {
-  // Tabs: 'ANALYTICS' | 'SETTINGS' | 'INVENTORY' | 'STAFF' | 'DEBTS' | 'ORDERS' | 'CATEGORIES'
-  const [activeTab, setActiveTab] = useState<'ANALYTICS' | 'SETTINGS' | 'INVENTORY' | 'STAFF' | 'DEBTS' | 'ORDERS' | 'CATEGORIES'>('ANALYTICS');
+  // Tabs: 'ANALYTICS' | 'SETTINGS' | 'INVENTORY' | 'STAFF' | 'DEBTS' | 'ORDERS' | 'CATEGORIES' | 'AI_CHAT' | 'DEVELOPER_PLATFORM' | 'CHANGE_PASSWORD'
+  const [activeTab, setActiveTab] = useState<'ANALYTICS' | 'SETTINGS' | 'INVENTORY' | 'STAFF' | 'DEBTS' | 'ORDERS' | 'CATEGORIES' | 'AI_CHAT' | 'DEVELOPER_PLATFORM' | 'CHANGE_PASSWORD'>('ANALYTICS');
+
+  // Developer System Generator dynamic entries representing spawned systems
+  const [generatedSystems, setGeneratedSystems] = useState<any[]>([
+    {
+      id: 'sys-1',
+      name: language === 'AR' ? 'متجر الصيدلية والتموينات الطبية' : 'Medical Pharmacy Store',
+      owner: 'أحمد صالح الذيباني',
+      domain: 'pharmacy.aldhibani.net',
+      industry: 'HEALTHCARE',
+      plan: 'PRO',
+      status: 'ACTIVE',
+      createdAt: '2026-06-08T18:00:00Z',
+      modules: ['Commerce', 'AI', 'Analytics']
+    },
+    {
+      id: 'sys-2',
+      name: language === 'AR' ? 'مكتب الرواد للمحاماة والتوثيق' : 'Al-Rowwad Legal Consulting',
+      owner: 'محمد الطيب اليمني',
+      domain: 'legal.aldhibani.net',
+      industry: 'LEGAL',
+      plan: 'STARTER',
+      status: 'ACTIVE',
+      createdAt: '2026-06-09T01:30:00Z',
+      modules: ['AI', 'Analytics']
+    }
+  ]);
+
+  // Inventory Transactions Ledger State
+  const [inventoryTransactions, setInventoryTransactions] = useState<InventoryTransaction[]>([
+    { id: 'tx-1', productId: 'dg-ym-500', type: 'IN', quantity: 200, reason: 'إعادة تزويد رصيد يمن موبايل بقناة أندرويد', createdAt: '2026-06-05T10:00:00Z', operatorName: 'عبدالوالي الذيباني' },
+    { id: 'tx-2', productId: 'dg-sb-500', type: 'OUT', quantity: 15, reason: 'مبيعات الكاشير المباشرة لفرع صنعاء', createdAt: '2026-06-06T14:30:00Z', operatorName: 'أمين الريمي' },
+    { id: 'tx-3', productId: 'gro-spices-1', type: 'ADJUST', quantity: -2, reason: 'تسوية جرد سنوي من الكادر الميداني', createdAt: '2026-06-07T09:15:00Z', operatorName: 'صالح الهمداني' },
+  ]);
+
+  // AI Chat States
+  const [aiSaaSInput, setAiSaaSInput] = useState('');
+  const [saasChatHistory, setSaasChatHistory] = useState<{ sender: 'user' | 'bot'; text: string; mode: 'BUSINESS' | 'GLOBAL' }[]>([
+    { sender: 'bot', text: language === 'AR' ? 'مرحباً بك في وحدة ذكاء الأعمال المساعد لتجارة ومستودعات الذيباني VIP. كيف يمكنني مساعدتك في تحليل مبيعات بوابات الشحن الجاري وجرد الصناديق اليوم؟' : 'Welcome to the Business Intelligence assistant for Aldhibani VIP. How can I help you analyze live recharge pipelines and cashier boxes today?', mode: 'BUSINESS' }
+  ]);
+  const [saasAiLoading, setSaasAiLoading] = useState(false);
 
   // Serverless DB entities: Money Boxes & Youth Workforce tracking (Supabase serverless DB authority)
   const [moneyBoxes, setMoneyBoxes] = useState<MoneyBox[]>(() => SupabaseServerlessDB.getMoneyBoxes());
   const [youthWorkforce, setYouthWorkforce] = useState<YouthWorkforceProfile[]>(() => SupabaseServerlessDB.getYouthWorkforce());
+
+  // Developer Platform View States for Virtual Tenancy Compilation
+  const [devSystemName, setDevSystemName] = useState('');
+  const [devSystemOwner, setDevSystemOwner] = useState('');
+  const [devSystemDomain, setDevSystemDomain] = useState('');
+  const [devSystemIndustry, setDevSystemIndustry] = useState<'RETAIL' | 'HEALTHCARE' | 'LEGAL' | 'SERVICES' | 'AI_OPERATIONS'>('RETAIL');
+  const [devSystemPlan, setDevSystemPlan] = useState<'STARTER' | 'PRO' | 'ENTERPRISE'>('STARTER');
+  const [devSelectedModules, setDevSelectedModules] = useState<string[]>(['Commerce', 'AI', 'Analytics']);
+  const [devTerminalLogs, setDevTerminalLogs] = useState<string[]>([]);
+  const [isGeneratingSystem, setIsGeneratingSystem] = useState(false);
+  const [selectedSchemaTable, setSelectedSchemaTable] = useState<string>('organizations');
+  const [copiedPolicyText, setCopiedPolicyText] = useState(false);
 
   // Server state datasets
   const [config, setConfig] = useState<StoreConfig>(currentConfig);
@@ -60,6 +112,23 @@ export default function Dashboard({
   const [debts, setDebts] = useState<DebtRecord[]>([]);
   const [staffList, setStaffList] = useState<StaffUser[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Password Change & Reset States
+  const [currentPass, setCurrentPass] = useState('');
+  const [newPass, setNewPass] = useState('');
+  const [confirmPass, setConfirmPass] = useState('');
+  const [passwordStatusMsg, setPasswordStatusMsg] = useState('');
+  const [passwordSuccessMsg, setPasswordSuccessMsg] = useState('');
+
+  // --- Money Box Admin Manager States ---
+  const [editingMoneyBox, setEditingMoneyBox] = useState<MoneyBox | null>(null);
+  const [boxId, setBoxId] = useState('');
+  const [boxNameAR, setBoxNameAR] = useState('');
+  const [boxNameEN, setBoxNameEN] = useState('');
+  const [boxBalance, setBoxBalance] = useState<number>(0);
+  const [boxDescAR, setBoxDescAR] = useState('');
+  const [boxDescEN, setBoxDescEN] = useState('');
+  const [showBoxForm, setShowBoxForm] = useState(false);
 
   // External Integration & Sync Simulation States
   const [isSyncing, setIsSyncing] = useState(false);
@@ -784,6 +853,67 @@ export default function Dashboard({
     }
   };
 
+  // Handler to purge experimental/trial data for clean catalog loads
+  const handlePurgeData = async (target: 'PRODUCTS' | 'CATEGORIES' | 'ORDERS' | 'DEBTS' | 'ALL') => {
+    let confirmMsg = '';
+    if (target === 'PRODUCTS') {
+      confirmMsg = language === 'AR' 
+        ? 'هل أنت متأكد تماماً من رغبتك في حذف وتصفية كافة الأصناف والمنتجات التجريبية من قاعدة البيانات؟' 
+        : 'Are you sure you want to delete all trial products from the database?';
+    } else if (target === 'CATEGORIES') {
+      confirmMsg = language === 'AR' 
+        ? 'هل أنت متأكد من رغبتك في مسح كافة المجموعات التجريبية؟' 
+        : 'Are you sure you want to delete all custom categories?';
+    } else if (target === 'ORDERS' || target === 'DEBTS') {
+      confirmMsg = language === 'AR' 
+        ? 'هل تريد تصفير كافة الطلبات والديون المسجلة لمسح ذمة التجربة؟' 
+        : 'Do you want to clear all orders and debts to reset sandbox history?';
+    } else if (target === 'ALL') {
+      confirmMsg = language === 'AR' 
+        ? '⚠️ تحذير شديد الأهمية!\n\nهل تريد تنفيذ تصفير شامل متكامل؟ سيقوم هذا بحذف كافة الأصناف والمجموعات والديون والطلبات فوراً والبدء بقاعدة بيانات جديدة فارغة تماماً.' 
+        : '⚠️ CRITICAL WARNING!\n\nThis will completely clear all products, categories, debts, and orders, leaving the store completely empty. Are you sure?';
+    }
+
+    if (!confirm(confirmMsg)) return;
+
+    setLoading(true);
+    try {
+      // 1. Cleans serverless database
+      if (target === 'PRODUCTS' || target === 'ALL') {
+        SupabaseServerlessDB.clearAllProducts();
+      }
+      if (target === 'CATEGORIES' || target === 'ALL') {
+        SupabaseServerlessDB.clearAllCategories();
+      }
+      if (target === 'ORDERS' || target === 'ALL') {
+        SupabaseServerlessDB.clearAllOrders();
+      }
+      if (target === 'DEBTS' || target === 'ALL') {
+        SupabaseServerlessDB.clearAllDebts();
+      }
+
+      // 2. Call backend express server to clear in-memory or database if exists
+      try {
+        await fetch('/api/clear-all', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': authToken || ''
+          },
+          body: JSON.stringify({ target })
+        }).catch(() => null);
+      } catch {}
+
+      // Refresh frontend states
+      await refreshAllData();
+      alert(language === 'AR' ? 'تمت عملية التصفية والتنظيف بنجاح! الموقع جاهز الآن للبدء دون تداخل.' : 'Pristine setup completed! The site has been cleared successfully.');
+    } catch (e: any) {
+      alert('Error during purge: ' + String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Category save handler
   const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -999,6 +1129,203 @@ export default function Dashboard({
       setStaffList(prev => prev.map(s => s.id === staffId ? { ...s, permissions: updatedPerms } : s));
     } catch {
       alert('Connection error.');
+    }
+  };
+
+  // Save or Edit Money Box Handler
+  const handleSaveMoneyBox = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!boxNameAR || !boxNameEN) {
+      alert(language === 'AR' ? 'يرجى إدخال اسم الصندوق باللغة العربية والإنجليزية!' : 'Please enter the box name in both Arabic and English!');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const currentBoxes = [...moneyBoxes];
+      if (editingMoneyBox) {
+        // Edit mode
+        const updated = currentBoxes.map(b => {
+          if (b.id === editingMoneyBox.id) {
+            return {
+              ...b,
+              nameAR: boxNameAR,
+              nameEN: boxNameEN,
+              balanceYER: boxBalance,
+              descriptionAR: boxDescAR,
+              descriptionEN: boxDescEN
+            };
+          }
+          return b;
+        });
+        SupabaseServerlessDB.saveMoneyBoxes(updated);
+        setMoneyBoxes(updated);
+        alert(language === 'AR' ? '🎁 تم تعديل الصندوق المالي بنجاح!' : 'Money box updated successfully!');
+      } else {
+        // Create mode
+        const cleanId = boxId.trim() ? boxId.trim().toLowerCase().replace(/[^a-z0-9]/g, '-') : String(Date.now());
+        const finalId = `box-${cleanId}`;
+        if (currentBoxes.some(b => b.id === finalId)) {
+          alert(language === 'AR' ? 'رمز المعرف هذا مستخدم بالفعل لصندوق آخر!' : 'This custom ID is already in use by another box!');
+          setLoading(false);
+          return;
+        }
+
+        const newBox: MoneyBox = {
+          id: finalId,
+          nameAR: boxNameAR,
+          nameEN: boxNameEN,
+          balanceYER: boxBalance,
+          descriptionAR: boxDescAR,
+          descriptionEN: boxDescEN
+        };
+
+        const updated = [...currentBoxes, newBox];
+        SupabaseServerlessDB.saveMoneyBoxes(updated);
+        setMoneyBoxes(updated);
+        alert(language === 'AR' ? '🎉 تم إضافة الصندوق المالي الجديد بنجاح!' : 'New money box added successfully!');
+      }
+
+      // Reset form states
+      setEditingMoneyBox(null);
+      setBoxId('');
+      setBoxNameAR('');
+      setBoxNameEN('');
+      setBoxBalance(0);
+      setBoxDescAR('');
+      setBoxDescEN('');
+      setShowBoxForm(false);
+    } catch (err: any) {
+      alert('Error: ' + String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteMoneyBox = (id: string) => {
+    if (id === 'box-main') {
+      alert(language === 'AR' ? '❌ لا يمكن حذف الصندوق المركزي الرئيسي تحت أي ظرف!' : 'Cannot delete the central main box!');
+      return;
+    }
+
+    const box = moneyBoxes.find(b => b.id === id);
+    if (!box) return;
+
+    const confirmMsg = language === 'AR'
+      ? `هل أنت متأكد من رغبتك في حذف صندوق "${box.nameAR}"؟\n⚠️ سيتم فقدان رصيد هذا الصندوق البالغ (${box.balanceYER.toLocaleString()} YER) بشكل نهائي!`
+      : `Are you sure you want to delete box "${box.nameEN}"?\n⚠️ This will permanently erase its balance of (${box.balanceYER.toLocaleString()} YER)!`;
+
+    if (!confirm(confirmMsg)) return;
+
+    const updated = moneyBoxes.filter(b => b.id !== id);
+    SupabaseServerlessDB.saveMoneyBoxes(updated);
+    setMoneyBoxes(updated);
+    alert(language === 'AR' ? '🗑 تمت إزالة الصندوق المالي بنجاح.' : 'Money box removed successfully.');
+  };
+
+  // Self Password Change
+  const handleSelfChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordStatusMsg('');
+    setPasswordSuccessMsg('');
+
+    if (!currentPass || !newPass || !confirmPass) {
+      setPasswordStatusMsg(language === 'AR' ? 'يرجى تعبئة كافة الحقول!' : 'Please fill all fields!');
+      return;
+    }
+
+    if (newPass !== confirmPass) {
+      setPasswordStatusMsg(language === 'AR' ? 'كلمات المرور الجديدة غير متطابقة!' : 'New passwords do not match!');
+      return;
+    }
+
+    if (newPass.length < 3) {
+      setPasswordStatusMsg(language === 'AR' ? 'كلمة المرور يجب أن تكون 3 أحرف على الأقل!' : 'Password must be at least 3 characters!');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 1. Try backend change
+      const response = await fetch('/api/staff/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          staffId: currentUser.id,
+          currentPassword: currentPass,
+          newPassword: newPass
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setPasswordStatusMsg(language === 'AR' ? (data.error || 'حدث خطأ ما') : (data.error || 'Password update failed'));
+        setLoading(false);
+        return;
+      }
+
+      // 2. Client-side database update
+      const updatedStaff = SupabaseServerlessDB.saveStaffPassword(currentUser.id, newPass);
+      setStaffList(updatedStaff);
+
+      setPasswordSuccessMsg(language === 'AR' ? 'تم تغيير كلمة المرور بنجاح تام!' : 'Password updated successfully!');
+      setCurrentPass('');
+      setNewPass('');
+      setConfirmPass('');
+    } catch (err: any) {
+      setPasswordStatusMsg(err.message || 'Error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Administrator/Manager override/reset password for staff account
+  const handleAdminResetPassword = async (staffId: string) => {
+    const staff = staffList.find(s => s.id === staffId);
+    if (!staff) return;
+
+    const promptMsg = language === 'AR'
+      ? `أدخل كلمة المرور الجديدة للحساب (${staff.username}):`
+      : `Enter new password for (${staff.username}):`;
+    
+    const plainVal = prompt(promptMsg);
+    if (plainVal === null) return; // user cancelled
+
+    const cleanPass = plainVal.trim();
+    if (cleanPass.length < 3) {
+      alert(language === 'AR' ? 'خطأ: كلمة المرور قصيرة جداً (أقل من 3 رموز)!' : 'Error: Password too short (minimum 3 signs)!');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 1. Save locally in dev storage & sync to Supabase if config is live
+      const updatedStaff = SupabaseServerlessDB.saveStaffPassword(staffId, cleanPass);
+      setStaffList(updatedStaff);
+
+      // 2. Call backend reset endpoint
+      try {
+        await fetch('/api/staff/reset-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': authToken || ''
+          },
+          body: JSON.stringify({
+            staffId: staffId,
+            newPassword: cleanPass
+          })
+        }).catch(() => null);
+      } catch {}
+
+      alert(language === 'AR' 
+        ? `🔐 تم استعادة وإعادة تعيين كلمة مرور الموظف (${staff.username}) بنجاح إلى: [ ${cleanPass} ]` 
+        : `🔐 Password for employee (${staff.username}) reset successfully to: [ ${cleanPass} ]`
+      );
+    } catch (err: any) {
+      alert('Error resetting password: ' + String(err));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1556,6 +1883,28 @@ export default function Dashboard({
               </button>
             )}
 
+            {/* Desktop Admin navigation */}
+
+            <button
+              onClick={() => setActiveTab('AI_CHAT')}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+                activeTab === 'AI_CHAT' ? 'bg-cyan-500 text-slate-950 font-black shadow-lg shadow-cyan-950/20' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
+              }`}
+            >
+              <Bot className="w-4.5 h-4.5 text-fuchsia-400" />
+              <span>{language === 'AR' ? 'مساعد الأعمال الذكي' : 'BI AI Intelligence'}</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('CHANGE_PASSWORD')}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+                activeTab === 'CHANGE_PASSWORD' ? 'bg-cyan-500 text-slate-950 font-black shadow-lg shadow-cyan-950/20' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
+              }`}
+            >
+              <Key className="w-4.5 h-4.5 text-amber-500" />
+              <span>{language === 'AR' ? 'تغيير كلمتي السرية' : 'Change My Password'}</span>
+            </button>
+
           </div>
         </div>
 
@@ -1575,6 +1924,40 @@ export default function Dashboard({
       {/* Main Panel Content Area */}
       <main className="flex-1 p-6 md:p-8 space-y-6 overflow-y-auto">
         
+        {/* Elegant Unified Header for Al-Dheebani VIP Store & Warehouse */}
+        <div className="bg-gradient-to-r from-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-5 flex flex-col lg:flex-row items-center justify-between gap-4 shadow-xl" dir="rtl">
+          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🦁</span>
+              <div className="text-right">
+                <h2 className="text-sm font-black text-white tracking-wide">
+                  {language === 'AR' ? 'مجموعة ومستودعات الذيباني VIP التجارية' : 'Aldhibani VIP Commercial Hub'}
+                </h2>
+                <p className="text-[10px] text-slate-400 font-mono">Sanaa Main Warehouse Pipeline (Live)</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2 mr-0 md:mr-3">
+              <span className="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase bg-[#facc15]/10 text-amber-400 border border-amber-500/15">
+                {language === 'AR' ? 'النظام الرئيسي' : 'MAIN SYSTEM'}
+              </span>
+              <span className="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/15 animate-pulse">
+                🟢 {language === 'AR' ? 'مستقر' : 'STABLE'}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-start lg:justify-end">
+            {/* Quick role display based on login */}
+            <div className="bg-slate-950 border border-slate-850 px-3.5 py-2 rounded-xl text-[10px] text-slate-400 font-bold flex items-center gap-1.5">
+              <span>👤</span>
+              <span>{language === 'AR' ? 'مذخر ومعالج النظام:' : 'Active Operator:'}</span>
+              <span className="text-cyan-400 font-mono font-extrabold font-bold">abdulkrem065@gmail.com</span>
+              <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-400 text-[8px] rounded border border-amber-500/30 uppercase font-black">{currentUser.role}</span>
+            </div>
+          </div>
+        </div>
+
         {/* Dynamic Warning & Quick-Return Notice Bar (Answers both mobile & desktop blocking issues) */}
         <div className="bg-gradient-to-r from-amber-500/10 via-amber-600/5 to-transparent border border-amber-500/20 rounded-3xl p-4 md:p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-md animate-fadeIn" dir="rtl">
           <div className="space-y-1">
@@ -1612,6 +1995,10 @@ export default function Dashboard({
           {isAdmin && <button onClick={() => setActiveTab('STAFF')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 ${activeTab === 'STAFF' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'}`}>الصلاحيات</button>}
           {(isAdmin || pCheck.viewSales) && <button onClick={() => setActiveTab('DEBTS')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 ${activeTab === 'DEBTS' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'}`}>الديون</button>}
           <button onClick={() => setActiveTab('ORDERS')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 ${activeTab === 'ORDERS' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'}`}>الطلبات</button>
+
+          <button onClick={() => setActiveTab('CHANGE_PASSWORD')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 ${activeTab === 'CHANGE_PASSWORD' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'}`}>تغيير كلمة المرور</button>
+
+          <button onClick={() => setActiveTab('AI_CHAT')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 ${activeTab === 'AI_CHAT' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'}`}>المساعد الذكي</button>
         </div>
 
         {/* Remote Sync Status Bar (Cloud Alternative to AnyDesk) */}
@@ -2327,30 +2714,206 @@ export default function Dashboard({
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-6">
                     {/* Money Boxes Panel */}
                     <div className="bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl space-y-5">
-                      <div className="border-b border-slate-850 pb-4 space-y-1">
-                        <span className="text-[10px] text-cyan-400 font-mono tracking-widest uppercase block">YER CASH BOXES MANAGEMENT</span>
-                        <h3 className="text-sm font-black text-white flex items-center gap-2">
-                          <span>🏦 إدارة وصناديق الحسابات بالريال اليمني (YER)</span>
-                        </h3>
-                        <p className="text-[11px] text-slate-450">
-                          نظام المحافظ التشغيلية لتوزيع تدفقات مبيعات الاتصالات والجملة والتموينات الحضرمية الممتازة.
-                        </p>
+                      <div className="border-b border-slate-850 pb-4 flex flex-col sm:flex-row justify-between items-start gap-4">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-cyan-400 font-mono tracking-widest uppercase block">YER CASH BOXES MANAGEMENT</span>
+                          <h3 className="text-sm font-black text-white flex items-center gap-2">
+                            <span>🏦 إدارة وصناديق الحسابات بالريال اليمني (YER)</span>
+                          </h3>
+                          <p className="text-[11px] text-slate-450">
+                            نظام المحافظ التشغيلية لتوزيع تدفقات مبيعات الاتصالات والجملة والتموينات الحضرمية الممتازة.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingMoneyBox(null);
+                            setBoxId('');
+                            setBoxNameAR('');
+                            setBoxNameEN('');
+                            setBoxBalance(0);
+                            setBoxDescAR('');
+                            setBoxDescEN('');
+                            setShowBoxForm(!showBoxForm);
+                          }}
+                          className="px-3 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-[10px] sm:text-xs transition-all flex items-center gap-1 cursor-pointer shrink-0 font-sans shadow-lg shadow-cyan-950/20"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{language === 'AR' ? 'إضافة صندوق/محفظة' : 'Add Cash Box/Wallet'}</span>
+                        </button>
                       </div>
+
+                      {/* Add/Edit Money Box Form */}
+                      {showBoxForm && (
+                        <form onSubmit={handleSaveMoneyBox} className="bg-slate-955 p-5 border border-slate-800 rounded-2xl space-y-3.5 shadow-inner animate-fadeIn">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-xs font-bold text-cyan-400 flex items-center gap-1.5 label-badge">
+                              <span>{editingMoneyBox ? '✏️ تعديل بيانات الصندوق المالي:' : '✨ إضافة صندوق مالي/محفظة جديدة:'}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowBoxForm(false);
+                                setEditingMoneyBox(null);
+                              }}
+                              className="text-slate-500 hover:text-slate-350 cursor-pointer p-0.5"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-1">
+                            {!editingMoneyBox ? (
+                              <div className="flex flex-col gap-1">
+                                <label className="text-[10px] text-slate-400 font-bold">{language === 'AR' ? 'رمز الصندوق (ID فريد بالإنجليزية):' : 'Box Unique ID Key:'}</label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="e.g. kuraimi-wallet"
+                                  value={boxId}
+                                  onChange={(e) => setBoxId(e.target.value)}
+                                  className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 font-mono text-xs text-white focus:outline-none focus:border-cyan-500"
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-1 opacity-60">
+                                <label className="text-[10px] text-slate-400 font-bold">{language === 'AR' ? 'رمز المعرف للصندوق (لا يغير):' : 'Box ID (Non-editable):'}</label>
+                                <input
+                                  type="text"
+                                  disabled
+                                  value={editingMoneyBox.id}
+                                  className="bg-slate-950 border border-slate-850 rounded-xl px-3 py-1.5 font-mono text-xs text-slate-400 cursor-not-allowed outline-none"
+                                />
+                              </div>
+                            )}
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[10px] text-slate-400 font-bold">{language === 'AR' ? 'الرصيد في الصندوق (ريال يمني):' : 'Current Balance (YER):'}</label>
+                              <input
+                                type="number"
+                                required
+                                placeholder="0"
+                                value={boxBalance}
+                                onChange={(e) => setBoxBalance(Number(e.target.value))}
+                                className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 font-mono text-xs text-cyan-300 focus:outline-none focus:border-cyan-500"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[10px] text-slate-400 font-bold">{language === 'AR' ? 'الاسم باللغة العربية:' : 'Name in Arabic:'}</label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="مثال: محفظة الكريمي مسبقة الدفع"
+                                value={boxNameAR}
+                                onChange={(e) => setBoxNameAR(e.target.value)}
+                                className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[10px] text-slate-400 font-bold">{language === 'AR' ? 'الاسم باللغة الإنجليزية:' : 'Name in English:'}</label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="e.g. Al-Kuraimi Prepaid Wallet"
+                                value={boxNameEN}
+                                onChange={(e) => setBoxNameEN(e.target.value)}
+                                className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-1">
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[10px] text-slate-400 font-bold">{language === 'AR' ? 'الوصف بالعربية:' : 'Description in Arabic:'}</label>
+                              <textarea
+                                rows={2}
+                                placeholder="اكتب هنا شرح أو استخدام هذا الحساب المالي..."
+                                value={boxDescAR}
+                                onChange={(e) => setBoxDescAR(e.target.value)}
+                                className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500 resize-none font-sans"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[10px] text-slate-400 font-bold">{language === 'AR' ? 'الوصف بالإنجليزية:' : 'Description in English:'}</label>
+                              <textarea
+                                rows={2}
+                                placeholder="Write usage or billing description here..."
+                                value={boxDescEN}
+                                onChange={(e) => setBoxDescEN(e.target.value)}
+                                className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500 resize-none font-sans"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 justify-end pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowBoxForm(false);
+                                setEditingMoneyBox(null);
+                              }}
+                              className="px-3.5 py-1.5 text-[10px] rounded-lg bg-slate-900 hover:bg-slate-850 text-slate-400 transition cursor-pointer font-sans"
+                            >
+                              {language === 'AR' ? 'إلغاء' : 'Cancel'}
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-4 py-1.5 text-[10px] rounded-lg bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-black cursor-pointer transition flex items-center gap-1 font-sans"
+                            >
+                              <Save className="w-3 h-3" />
+                              <span>{language === 'AR' ? 'حفظ الصندوق' : 'Save Cash Box'}</span>
+                            </button>
+                          </div>
+                        </form>
+                      )}
 
                       {/* Boxes Grid */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                         {moneyBoxes.map((box) => (
-                          <div key={box.id} className="bg-slate-950/80 hover:bg-slate-950 p-4 border border-slate-850/65 rounded-2xl transition hover:border-cyan-500/30">
-                            <div className="flex justify-between items-start gap-2">
-                              <span className="text-[11px] font-black text-slate-300">{language === 'AR' ? box.nameAR : box.nameEN}</span>
-                              <span className="px-2 py-0.5 bg-cyan-950 border border-cyan-850/60 rounded text-[9px] font-bold text-cyan-300">{box.id}</span>
+                          <div key={box.id} className="bg-slate-950/80 hover:bg-slate-950 p-4 border border-slate-850/65 rounded-2xl transition hover:border-cyan-500/30 flex flex-col justify-between">
+                            <div>
+                              <div className="flex justify-between items-start gap-2">
+                                <span className="text-[11px] font-black text-slate-305">{language === 'AR' ? box.nameAR : box.nameEN}</span>
+                                <span className="px-2 py-0.5 bg-cyan-950 border border-cyan-850/60 rounded text-[9px] font-bold text-cyan-300 font-mono">{box.id}</span>
+                              </div>
+                              <span className="text-lg font-mono font-black text-cyan-400 mt-2 block tracking-tight">
+                                {box.balanceYER.toLocaleString()} <span className="text-[10px] font-sans">ريال يمني</span>
+                              </span>
+                              <span className="text-[9px] text-slate-500 block mt-1 line-clamp-2 leading-relaxed font-sans">
+                                {language === 'AR' ? box.descriptionAR : box.descriptionEN}
+                              </span>
                             </div>
-                            <span className="text-lg font-mono font-black text-cyan-400 mt-2 block tracking-tight">
-                              {box.balanceYER.toLocaleString()} <span className="text-[10px] font-sans">ريال يمني</span>
-                            </span>
-                            <span className="text-[9px] text-slate-500 block mt-1 line-clamp-2 leading-relaxed">
-                              {language === 'AR' ? box.descriptionAR : box.descriptionEN}
-                            </span>
+
+                            {/* Editing & Deleting Actions Panel */}
+                            <div className="flex gap-2 justify-end mt-3 pt-2 border-t border-slate-900/60">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingMoneyBox(box);
+                                  setBoxId(box.id.replace('box-', ''));
+                                  setBoxNameAR(box.nameAR);
+                                  setBoxNameEN(box.nameEN);
+                                  setBoxBalance(box.balanceYER);
+                                  setBoxDescAR(box.descriptionAR);
+                                  setBoxDescEN(box.descriptionEN);
+                                  setShowBoxForm(true);
+                                }}
+                                className="px-2 py-1 text-[9px] text-cyan-400 hover:text-cyan-350 hover:bg-cyan-950/20 rounded-lg flex items-center gap-1 transition cursor-pointer font-sans"
+                              >
+                                <Edit3 className="w-3 h-3 text-cyan-400" />
+                                <span>{language === 'AR' ? 'تعديل' : 'Edit'}</span>
+                              </button>
+
+                              {box.id !== 'box-main' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMoneyBox(box.id)}
+                                  className="px-2 py-1 text-[9px] text-red-400 hover:text-red-350 hover:bg-red-950/20 rounded-lg flex items-center gap-1 transition cursor-pointer font-sans"
+                                >
+                                  <Trash2 className="w-3 h-3 text-red-400" />
+                                  <span>{language === 'AR' ? 'حذف' : 'Delete'}</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -2903,17 +3466,133 @@ export default function Dashboard({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs text-slate-400 font-bold">{language === 'AR' ? 'أيقونة اللوجو شعار الطمغة:' : 'App Logo Emoji:'}</label>
-                  <input
-                    type="text"
-                    required
-                    value={config.logoEmoji}
-                    onChange={(e) => setConfig({ ...config, logoEmoji: e.target.value })}
-                    className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-center text-sm"
-                  />
+              {/* 🖼️ LOGO CONFIGURATION & MANAGER (إضافة وتعديل اللوجو متاح بالرفع أو الرابط) */}
+              <div className="bg-slate-950/80 p-5 border border-slate-850 rounded-2xl space-y-4">
+                <div className="flex items-center gap-2 border-b border-slate-850 pb-3">
+                  <span className="text-xs bg-amber-500/15 text-amber-400 p-1 rounded">🖼️</span>
+                  <div className="text-right">
+                    <span className="text-xs font-bold text-white block">{language === 'AR' ? 'إعدادات شعار ولوجو المتجر:' : 'Store Logo Settings:'}</span>
+                    <span className="text-[10px] text-slate-500 block">{language === 'AR' ? 'يمكنك رفع صورة مخصصة لشعارك، أو لصق رابط، أو استخدام الرموز التعبيرية الجاهزة.' : 'Upload custom logo, paste an URL or choose preset icons.'}</span>
+                  </div>
                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Left Column: Emoji & URL Fields */}
+                  <div className="space-y-3.5">
+                    <div className="flex flex-col gap-1.5 text-right" dir="rtl">
+                      <label className="text-xs text-slate-400 font-bold">{language === 'AR' ? 'أيقونة اللوجو (الرموز التعبيرية):' : 'Fallback Logo Emoji:'}</label>
+                      <input
+                        type="text"
+                        required
+                        value={config.logoEmoji || '👑'}
+                        onChange={(e) => setConfig({ ...config, logoEmoji: e.target.value })}
+                        className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white font-sans text-center"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 text-right font-sans" dir="rtl">
+                      <label className="text-xs text-slate-400 font-bold">{language === 'AR' ? 'رابط شعار المتجر المخصص (URL):' : 'Custom Logo Image URL:'}</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="https://example.com/logo.png"
+                          value={config.logoImageUrl || ''}
+                          onChange={(e) => setConfig({ ...config, logoImageUrl: e.target.value })}
+                          className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white font-mono"
+                          dir="ltr"
+                        />
+                        {config.logoImageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setConfig({ ...config, logoImageUrl: '' })}
+                            className="px-2.5 py-1.5 rounded-xl bg-red-950/30 text-red-400 hover:bg-red-900/40 text-[10px] font-black cursor-pointer transition"
+                          >
+                            {language === 'AR' ? 'حذف' : 'Clear'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Upload Buttons & Presets previews */}
+                  <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-slate-900/40 p-3.5 border border-slate-850/50 rounded-xl">
+                    <div className="flex flex-col items-center justify-center space-y-2 w-full">
+                      <span className="text-[10px] text-slate-450 font-bold block">{language === 'AR' ? 'الشعار الحالي النشط:' : 'Active Current Logo:'}</span>
+                      
+                      {config.logoImageUrl ? (
+                        <div className="relative group">
+                          <img
+                            src={config.logoImageUrl}
+                            alt="Custom Logo"
+                            className="w-16 h-16 object-contain rounded-xl border-2 border-amber-400 bg-slate-950 p-1 shadow-lg"
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 text-amber-400 flex items-center justify-center text-3xl shadow-inner font-sans">
+                          {config.logoEmoji || '👑'}
+                        </div>
+                      )}
+
+                      {/* Direct Upload Local Image File */}
+                      <div className="pt-1 w-full flex justify-center">
+                        <label className="cursor-pointer py-1.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-450 text-slate-950 font-black text-[10px] transition-all flex items-center gap-1.5 shadow font-sans">
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{language === 'AR' ? 'رفع لوجو من جهازك' : 'Upload Local Logo'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) {
+                                if (f.size > 2 * 1024 * 1024) {
+                                  alert(language === 'AR' ? '⚠️ حجم الملف كبير! الحد الأقصى 2 ميجابايت.' : '⚠️ File too large! Maximum limit is 2MB.');
+                                  return;
+                                }
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                  setConfig({ ...config, logoImageUrl: reader.result as string });
+                                };
+                                reader.readAsDataURL(f);
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Presets Grid Selection */}
+                    <div className="w-full text-right" dir="rtl">
+                      <span className="text-[10px] text-slate-400 font-bold block mb-1.5">{language === 'AR' ? 'أو اختر من شعاراتنا الجاهزة للمتاجر:' : 'Or choose preset store themes:'}</span>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                          { emoji: '⚜️', name: 'التاجي', img: 'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=120&q=80' },
+                          { emoji: '⭐', name: 'المتألق', img: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=120&q=80' },
+                          { emoji: '☕', name: 'يمني عريق', img: 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=120&q=80' },
+                          { emoji: '🦅', name: 'الصقر', img: 'https://images.unsplash.com/photo-1614064641938-3bbee52942c7?w=120&q=80' },
+                          { emoji: '💎', name: 'الماسي', img: 'https://images.unsplash.com/photo-1601049541289-9b1b7bbbfe19?w=120&q=80' },
+                          { emoji: '⚡', name: 'فليكس', img: 'https://images.unsplash.com/photo-1618005198143-e52834644026?w=120&q=80' },
+                        ].map((preset, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setConfig({ ...config, logoImageUrl: preset.img, logoEmoji: preset.emoji })}
+                            className="bg-slate-950 hover:bg-slate-900 border border-slate-800 hover:border-amber-400 p-1.5 rounded-lg text-center flex flex-col items-center justify-center transition cursor-pointer"
+                            title={preset.name}
+                          >
+                            <img src={preset.img} alt={preset.name} className="w-5 h-5 rounded-md object-cover mb-0.5" referrerPolicy="no-referrer" />
+                            <span className="text-[7.5px] scale-90 text-slate-500 font-sans block truncate w-full">{preset.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Exchange Rates Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs text-slate-400 font-bold">{language === 'AR' ? 'صرف صرف الدولار مقابل الريال اليمني YER:' : 'Exchange Rate USD/YER:'}</label>
                   <input
@@ -3061,14 +3740,34 @@ export default function Dashboard({
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[11px] text-slate-400 font-bold">{language === 'AR' ? 'كود مجلد Google Drive المشترك:' : 'Google Drive Shared Folder ID:'}</label>
+                      <label className="text-[11px] text-slate-400 font-bold">
+                        {language === 'AR' ? 'كود مجلد أو رابط Google Drive المباشر:' : 'Google Drive Link or Folder ID:'}
+                      </label>
                       <input
                         type="text"
                         value={config.remoteGDriveFolderId || 'folder-id-7788'}
-                        onChange={(e) => setConfig({ ...config, remoteGDriveFolderId: e.target.value })}
-                        className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-202 font-mono text-left focus:outline-none focus:border-cyan-500"
-                        placeholder="1A_8g9bTCDFGHIJK_LM_NOPrs"
+                        onChange={(e) => {
+                          const val = e.target.value.trim();
+                          // Regex to extract file/folder ID from multiple Google Drive formats:
+                          const fileMatch = val.match(/\/file\/d\/([a-zA-Z0-9-_]+)/);
+                          const folderMatch = val.match(/\/folders\/([a-zA-Z0-9-_]+)/);
+                          const idParamMatch = val.match(/[?&]id=([a-zA-Z0-9-_]+)/);
+                          
+                          let finalId = val;
+                          if (fileMatch && fileMatch[1]) finalId = fileMatch[1];
+                          else if (folderMatch && folderMatch[1]) finalId = folderMatch[1];
+                          else if (idParamMatch && idParamMatch[1]) finalId = idParamMatch[1];
+                          
+                          setConfig({ ...config, remoteGDriveFolderId: finalId });
+                        }}
+                        className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 font-mono text-left focus:outline-none focus:border-cyan-500"
+                        placeholder="https://drive.google.com/file/d/..."
                       />
+                      {config.remoteGDriveFolderId && config.remoteGDriveFolderId.length > 20 && (
+                        <span className="text-[10px] text-emerald-400 font-mono text-left block mt-1 dir-ltr">
+                          ✔ Extracted GDrive ID: {config.remoteGDriveFolderId.substring(0, 15)}...
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <label className="text-[11px] text-slate-400 font-bold">{language === 'AR' ? 'اسم ملف قاعدة البيانات المستهدف جلبها:' : 'Target Database Backup Filename:'}</label>
@@ -3198,6 +3897,294 @@ export default function Dashboard({
                 </div>
               )}
 
+            </div>
+          </div>
+
+          {/* THIRD CARD: External System Catalog & Inventory Sync Integration Portal */}
+          <div className="bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl max-w-3xl mt-6 animate-fadeIn text-right" dir="rtl">
+            <h3 className="text-sm font-bold text-white mb-1 uppercase tracking-wider flex items-center gap-2">
+              <span className="p-1 bg-indigo-950 text-indigo-400 rounded-lg"><Database className="w-4 h-4" /></span>
+              <span>{language === 'AR' ? 'بوابة تكامل جرد واستيراد السلع والمنتجات (الربط المالي الشامل)' : 'External Catalog Sync & Integration Hub'}</span>
+            </h3>
+            <p className="text-xs text-slate-500 mb-6 font-sans">
+              {language === 'AR' 
+                ? 'يتيح لك هذا القسم سحب وتحديث الأصناف، الفهارس، كروت الشحن ومواد التموين بطريقة تفاعلية ومؤتمتة بالكامل من حزم البرامج المحاسبية الخارجية المعتمدة، الملفات المجدولة، أو خوادم الويب الخاصة بمتجر الذيباني.'
+                : 'Import, map, and synchronize active products, game vouchers, airtime categories, and grocery lists directly from external databases, central API servers, or pre-mapped Excel files.'}
+            </p>
+
+            <div className="space-y-5">
+              {/* Type selector */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs text-slate-400 font-bold">{language === 'AR' ? 'نوع المصدر المحاسبي الخارجي للسلع:' : 'Select Target Ledger System Type:'}</label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                  {/* ANDROID SQLITE */}
+                  <button
+                    type="button"
+                    onClick={() => setConfig({ ...config, integrationType: 'ANDROID' })}
+                    className={`p-3 rounded-xl border text-right transition-all flex flex-col items-center justify-center text-center gap-2 cursor-pointer select-none ${
+                      (config.integrationType || 'ANDROID') === 'ANDROID'
+                        ? 'bg-indigo-950/40 border-indigo-500 text-white'
+                        : 'bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <span className="text-lg">📱</span>
+                    <span className="text-[10px] font-black">{language === 'AR' ? 'تطبيق أندرويد' : 'Android SQLite'}</span>
+                  </button>
+
+                  {/* WEB API */}
+                  <button
+                    type="button"
+                    onClick={() => setConfig({ ...config, integrationType: 'WEB' })}
+                    className={`p-3 rounded-xl border text-right transition-all flex flex-col items-center justify-center text-center gap-2 cursor-pointer select-none ${
+                      config.integrationType === 'WEB'
+                        ? 'bg-indigo-950/40 border-indigo-500 text-white'
+                        : 'bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <span className="text-lg">🌐</span>
+                    <span className="text-[10px] font-black">{language === 'AR' ? 'خدمات ويب API' : 'REST Web API'}</span>
+                  </button>
+
+                  {/* DESKTOP DLL */}
+                  <button
+                    type="button"
+                    onClick={() => setConfig({ ...config, integrationType: 'DESKTOP' })}
+                    className={`p-3 rounded-xl border text-right transition-all flex flex-col items-center justify-center text-center gap-2 cursor-pointer select-none ${
+                      config.integrationType === 'DESKTOP'
+                        ? 'bg-indigo-950/40 border-indigo-500 text-white'
+                        : 'bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <span className="text-lg">💻</span>
+                    <span className="text-[10px] font-black">{language === 'AR' ? 'نظام مكتبي محلي' : 'Desktop Link'}</span>
+                  </button>
+
+                  {/* EXCEL SHEET */}
+                  <button
+                    type="button"
+                    onClick={() => setConfig({ ...config, integrationType: 'EXCEL' })}
+                    className={`p-3 rounded-xl border text-right transition-all flex flex-col items-center justify-center text-center gap-2 cursor-pointer select-none ${
+                      config.integrationType === 'EXCEL'
+                        ? 'bg-indigo-950/40 border-indigo-500 text-white'
+                        : 'bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <span className="text-lg">📊</span>
+                    <span className="text-[10px] font-black">{language === 'AR' ? 'شيت إكسل Excel' : 'Excel Sheet'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Dynamic Sub-inputs based on selector */}
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-850 space-y-4 font-sans text-right" dir="rtl">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] text-slate-400 font-bold block text-right">
+                      {config.integrationType === 'EXCEL' 
+                        ? (language === 'AR' ? 'مسار أو اسم ملف Excel المستهدف:' : 'Excel Worksheet File Path:')
+                        : (language === 'AR' ? 'رابط بوابة الدمج والاستيراد (API URL):' : 'Integration Endpoint API URL:')}
+                    </label>
+                    <input
+                      type="text"
+                      value={config.integrationEndpoint || ''}
+                      onChange={(e) => setConfig({ ...config, integrationEndpoint: e.target.value })}
+                      placeholder={config.integrationType === 'EXCEL' ? 'Dhibani-Inventory-2026.xlsx' : 'https://aldhibani-api.com/v1/android-sync'}
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono text-left focus:outline-none focus:border-indigo-500 w-full"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] text-slate-400 font-bold block text-right">{language === 'AR' ? 'رمز الوصول السري للربط والتحقق (API SecToken):' : 'Secret Security Key (Authorization Token):'}</label>
+                    <input
+                      type="password"
+                      value={config.integrationApiKey || ''}
+                      onChange={(e) => setConfig({ ...config, integrationApiKey: e.target.value })}
+                      placeholder="ALDHB_SECURE_TOKEN_XXXX"
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono text-left focus:outline-none focus:border-indigo-500 w-full"
+                    />
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-slate-500 leading-relaxed border-t border-slate-900 pt-2 flex items-center gap-2">
+                  <span className="text-indigo-400 font-bold">💡 {language === 'AR' ? 'حول المصدر الحالي:' : 'Tip:'}</span>
+                  <span>
+                    {(config.integrationType || 'ANDROID') === 'ANDROID' && (language === 'AR' ? 'يقوم بقراءة قاعدة بيانات التطبيق أندرويد مباشرة واستخلاص الفئات وباقات الشحن الفوري.' : 'Reads local SQLite databases on Android to map airtimes.')}
+                    {config.integrationType === 'WEB' && (language === 'AR' ? 'يستعلم من خادم API السحابي للغمر والإنفاق عبر بروتوكول RESTful قياسي.' : 'Polls central cloud application node for catalogue updates.')}
+                    {config.integrationType === 'DESKTOP' && (language === 'AR' ? 'يرتبط بنظام إدارة مبيعات السنترال المكتبي المحلي لتفصيل مبيعات ومواد التموين.' : 'Integrates with native windows background system dispatcher.')}
+                    {config.integrationType === 'EXCEL' && (language === 'AR' ? 'يستورد جدول كامل من معروض السلع بملفات الإكسل لرفع الكتالوج آلياً بدفعة واحدة.' : 'Validates raw XLS tables and parses list rows into active showrooms.')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex flex-wrap gap-3 items-center justify-end font-sans">
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    try {
+                      const res = await fetch('/api/config', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': authToken || ''
+                        },
+                        body: JSON.stringify(config)
+                      });
+                      if (res.ok) {
+                        const body = await res.json();
+                        setConfig(body.config);
+                        onConfigChanged(body.config);
+                        saveItem('aldhibani_local_config', body.config);
+                        alert(language === 'AR' ? 'تم تسجيل كود وتفاصيل ربط السلع بنجاح!' : 'Commodity integration credentials saved successfully!');
+                      }
+                    } catch {
+                      alert(language === 'AR' ? 'حدث خطأ غير متوقع أثناء الحفظ!' : 'Save unexpected error');
+                    }
+                  }}
+                  className="py-2.5 px-4 rounded-xl bg-slate-950 text-slate-300 border border-slate-800 hover:text-white transition-all text-xs font-black flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{language === 'AR' ? 'تسجيل إرسالية تكامل السلع' : 'Save Credentials Details'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSyncing}
+                  onClick={triggerExternalIntegrationSync}
+                  className={`py-2.5 px-5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-lg ${
+                    isSyncing 
+                      ? 'bg-slate-850 text-slate-500 cursor-not-allowed'
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white animate-pulse'
+                  }`}
+                >
+                  <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>{language === 'AR' ? 'بدء استيراد وجرد الأصناف تلقائياً 🔄' : 'Run Import & Catalog Sync Now 🔄'}</span>
+                </button>
+              </div>
+
+              {/* Streaming logs block */}
+              {(isSyncing || syncLogs.length > 0) && (
+                <div className="bg-slate-950 rounded-2xl border border-slate-850 p-4.5 space-y-2 animate-fadeIn text-right" dir="rtl">
+                  <span className="text-[10px] text-slate-400 tracking-widest font-mono font-bold block pb-1.5 border-b border-slate-900 text-left">
+                    LIVE SYSTEM DATA IMPORT ORCHESTRATOR / CONSOLE LOGS
+                  </span>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto font-mono text-[11px] leading-relaxed">
+                    {syncLogs.map((log, index) => (
+                      <div 
+                        key={index} 
+                        className={
+                          log.includes('🔴') || log.includes('error')
+                            ? 'text-red-400' 
+                            : log.includes('🟢') || log.includes('📥') || log.includes('✅')
+                            ? 'text-emerald-400 font-bold' 
+                            : log.includes('🚀') 
+                            ? 'text-indigo-400 font-bold' 
+                            : 'text-slate-300'
+                        }
+                      >
+                        {log}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* PURGE / CLEAN SLATE UTILITY CARD */}
+          <div className="bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl max-w-3xl mt-6 animate-fadeIn text-right border-red-950/45" dir="rtl">
+            <h3 className="text-sm font-bold text-white mb-1 uppercase tracking-wider flex items-center gap-2">
+              <span className="p-1 bg-red-950 text-red-400 rounded-lg"><Trash2 className="w-4 h-4" /></span>
+              <span>{language === 'AR' ? 'تصفية وتنظيف الموقع للبدء بملف جديد (منع تداخل البناء)' : 'Pristine Clean Slate & Database Purge Tool'}</span>
+            </h3>
+            <p className="text-xs text-slate-500 mb-6 font-sans">
+              {language === 'AR' 
+                ? 'تساعدك هذه الأدوات الحساسة على تصفية وتنظيف الموقع بالكامل من السلع والتصنيفات والبيانات التجريبية المعروضة، لضمان بناء كتالوج نظيف 100% واستقبال ملفات الاستيراد والمزامنة الجديدة دون تداخل الكود.'
+                : 'This system security widget purges all active sample products, categories, logs, and trial datasets, establishing an absolute clean slate for your incoming accounting database file.'}
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Product and category specific purges */}
+              <div className="bg-slate-950 border border-slate-850 p-4.5 rounded-2xl flex flex-col justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-200 mb-1">{language === 'AR' ? '1. تصفية وحذف كافة الأصناف السلعية' : '1. Purge Active Storefront Products'}</h4>
+                  <p className="text-[10px] text-slate-500 mb-4 font-sans">
+                    {language === 'AR' 
+                      ? `سيتم تفريغ كافة المنتجات الرقمية والملموسة المعروضة حالياً بالكامل. (الأصناف الحالية: ${products.length})`
+                      : `Completely wipe all digital vouchers, recharges and physical commodities. (Current products: ${products.length})`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handlePurgeData('PRODUCTS')}
+                  className="w-full py-2 px-3 rounded-xl bg-red-950/50 hover:bg-red-950 text-red-400 hover:text-red-300 border border-red-500/20 text-[11px] font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer font-sans"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{language === 'AR' ? 'حذف وتصفية كافة المنتجات 🗑__' : 'Delete All Products 🗑__'}</span>
+                </button>
+              </div>
+
+              <div className="bg-slate-950 border border-slate-850 p-4.5 rounded-2xl flex flex-col justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-200 mb-1">{language === 'AR' ? '2. تصفية وحذف المجموعات التصنيفية' : '2. Purge Document Categories'}</h4>
+                  <p className="text-[10px] text-slate-500 mb-4 font-sans">
+                    {language === 'AR' 
+                      ? `سيتم إزالة جميع فئات الرفوف وتقسيمات الكتالوج الحالية. (المجموعات الحالية: ${categories.length})`
+                      : `Clear out catalog sections, shelf categories, and product buckets. (Current categories: ${categories.length})`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handlePurgeData('CATEGORIES')}
+                  className="w-full py-2 px-3 rounded-xl bg-red-950/50 hover:bg-red-950 text-red-400 hover:text-red-300 border border-red-500/20 text-[11px] font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer font-sans"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{language === 'AR' ? 'حذف وتصفية كافة المجموعات 🗑__' : 'Delete All Categories 🗑__'}</span>
+                </button>
+              </div>
+
+              <div className="bg-slate-950 border border-slate-850 p-4.5 rounded-2xl flex flex-col justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-200 mb-1">{language === 'AR' ? '3. تصفير الديون والطلبات المسجلة' : '3. Reset Transactions & Debts Ledger'}</h4>
+                  <p className="text-[10px] text-slate-500 mb-4 font-sans">
+                    {language === 'AR' 
+                      ? `لحذف فواتير المبيعات التجريبية وتدقيق المديونية لتصفير الحسابات المالية. (الديون: ${debts.length}، الطلبات: ${orders.length})`
+                      : `Clears recorded orders, invoice statistics, and registered debt ledgers. (Debts: ${debts.length}, Orders: ${orders.length})`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handlePurgeData('DEBTS')}
+                  className="w-full py-2 px-3 rounded-xl bg-amber-950/50 hover:bg-amber-950 text-amber-400 hover:text-amber-300 border border-amber-500/20 text-[11px] font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer font-sans"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{language === 'AR' ? 'تصفير الديون والطلبات التجريبية 🧹__' : 'Reset Debts & Orders 🧹__'}</span>
+                </button>
+              </div>
+
+              {/* Master Full Sync Reset */}
+              <div className="bg-red-950/10 border border-red-500/25 p-4.5 rounded-2xl flex flex-col justify-between md:col-span-2">
+                <div>
+                  <h4 className="text-xs font-black text-red-400 mb-1 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-red-400" />
+                    <span>{language === 'AR' ? 'تصفير شامل متكامل (قنبلة الحذف الشامل - العودة للمصنع)' : 'Full System Deep Purge (Back to Factory Setup)'}</span>
+                  </h4>
+                  <p className="text-[10px] text-slate-400 mb-4 leading-relaxed font-sans">
+                    {language === 'AR' 
+                      ? 'يقوم هذا الخيار بمسح وحذف كافة الأصناف والمجموعات والديون وسجل المبيعات وصناديق المال فوراً من المتصفح والملف المرفع والخادم لخلق بيئة تشغيلية بيضاء خالية 100% لاستقبال الملف الجديد دون أي تداخل.'
+                      : 'Irreversibly delete everything (Products + Categories + Debts + Orders) instantly to create a 100% blank template setup ready for clean inventory downloads or direct syncs.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handlePurgeData('ALL')}
+                  className="w-full py-3 px-4 rounded-xl bg-red-650 hover:bg-red-600 text-white text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer font-sans shadow-lg shadow-red-950/40"
+                >
+                  <AlertCircle className="w-4 h-4" />
+                  <span>{language === 'AR' ? 'تفريغ وتصفية شاملة وتجهيز الموقع لملف جديد 🚨' : 'Format Completely & Prepare Site for New File 🚨'}</span>
+                </button>
+              </div>
             </div>
           </div>
           </>
@@ -3662,134 +4649,148 @@ export default function Dashboard({
                             )
                           ) : (
                             prod.stock !== undefined ? (
-                              <span className={`font-mono text-[10px] px-2 py-0.5 rounded-md ${
-                                prod.stock <= 5 
-                                  ? 'text-amber-450 bg-amber-950/20 font-bold' 
-                                  : 'text-slate-400 font-medium'
-                              }`}>
-                                {prod.stock} Items
+                              <span className={`font-mono text-xs font-bold ${prod.stock <= 5 ? 'text-red-400 animate-pulse' : 'text-slate-400'}`}>
+                                {prod.stock.toLocaleString()}
                               </span>
                             ) : (
-                              <span className="text-cyan-400 font-mono text-[10px] uppercase font-bold tracking-wider block">
-                                📡 Direct API
-                              </span>
+                              <span className="text-slate-500 font-mono text-[10px]">Unlimited</span>
                             )
                           )}
                         </div>
                       </div>
                     </div>
 
-                    {/* Category Label Section */}
-                    <div className="flex items-center justify-between text-[10px] font-sans border-b border-slate-900 pb-2">
-                      <span className="text-slate-500 font-bold">{language === 'AR' ? 'المجموعة/القسم:' : 'Category:'}</span>
-                      <span className="px-2.5 py-0.5 text-[9px] font-black uppercase rounded-lg bg-slate-900 border border-slate-850 text-slate-400">
-                        {prod.category}
+                    {/* Category Label & Availability Tag */}
+                    <div className="flex justify-between items-center text-xs font-sans">
+                      <span className="text-slate-500">{language === 'AR' ? 'القسم:' : 'Category:'}</span>
+                      <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-850 text-[10px] uppercase font-bold text-slate-300">
+                        {categories.find(c => c.id === prod.category)?.nameAR || prod.category}
                       </span>
                     </div>
 
-                    {/* Bottom Action Section */}
-                    <div className="flex items-center justify-end gap-1.5 mt-auto pt-2">
+                    <div className="flex justify-between items-center text-xs font-sans">
+                      <span className="text-slate-500">{language === 'AR' ? 'الحالة المعروضة:' : 'Display Status:'}</span>
                       {isEditing ? (
-                        <div className="flex items-center gap-1.5 w-full">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={inventoryForm.isAvailable}
+                            onChange={(e) => setInventoryForm({ ...inventoryForm, isAvailable: e.target.checked })}
+                            className="w-3.5 h-3.5 rounded text-cyan-500 bg-slate-900 border-slate-800"
+                          />
+                          <span className="text-[11px] text-slate-350">{language === 'AR' ? 'نشط' : 'Active'}</span>
+                        </div>
+                      ) : (
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                          prod.isAvailable 
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10' 
+                            : 'bg-rose-500/10 text-rose-455 border border-rose-500/10'
+                        }`}>
+                          {prod.isAvailable ? (language === 'AR' ? 'معروض' : 'Published') : (language === 'AR' ? 'مخفي' : 'Hidden')}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Bottom Action row */}
+                    <div className="flex gap-2 pt-2 border-t border-slate-900 mt-1">
+                      {isEditing ? (
+                        <>
                           <button
                             type="button"
                             onClick={() => handleSaveProductInventory(prod.id)}
-                            className="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] rounded-xl flex items-center justify-center gap-1 cursor-pointer transition"
+                            className="flex-1 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-extrabold cursor-pointer text-center"
                           >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>Save</span>
+                            {language === 'AR' ? 'حفظ الحقول' : 'Save'}
                           </button>
                           <button
                             type="button"
                             onClick={() => setEditingProduct(null)}
-                            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-400 text-[10px] font-bold rounded-xl cursor-pointer transition border border-slate-800"
+                            className="px-3 py-2 bg-slate-900 hover:bg-slate-850 text-slate-400 rounded-xl text-xs font-bold cursor-pointer border border-slate-800"
                           >
-                            Cancel
+                            {language === 'AR' ? 'إلغاء' : 'Cancel'}
                           </button>
-                        </div>
+                        </>
                       ) : (
-                        <div className="flex items-center justify-between w-full">
-                          {/* Left helper actions */}
+                        <>
                           <button
                             type="button"
                             onClick={() => {
-                              if (confirm(language === 'AR' ? 'هل أنت متأكد من حذف هذا المنتج نهائياً من الهايبر ماركت؟' : 'Are you sure you want to permanently delete this product?')) {
-                                handleDeleteProduct(prod.id);
-                              }
+                              setEditingProduct(prod.id);
+                              setInventoryForm({
+                                priceYER: prod.priceYER,
+                                stock: prod.stock !== undefined ? prod.stock : 0,
+                                isAvailable: prod.isAvailable || false
+                              });
                             }}
-                            className="p-2 bg-red-950/20 hover:bg-red-950/40 border border-red-900/30 text-red-405 text-red-400 rounded-xl cursor-pointer transition-colors"
-                            title="Delete Product"
+                            className="flex-1 py-1.5 bg-slate-900 hover:bg-slate-850 text-slate-200 rounded-xl text-xs font-bold cursor-pointer border border-slate-800 text-center"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            {language === 'AR' ? 'تعديل سريع' : 'Quick Edit'}
+                          </button>
+                          
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFullEditingProduct(prod);
+                              setIsAddingProduct(false);
+                              setProductForm({
+                                id: prod.id,
+                                nameAR: prod.nameAR,
+                                nameEN: prod.nameEN,
+                                descriptionAR: prod.descriptionAR || '',
+                                descriptionEN: prod.descriptionEN || '',
+                                category: prod.category,
+                                brand: prod.brand || '',
+                                priceYER: prod.priceYER,
+                                imageUrl: prod.imageUrl,
+                                isAvailable: prod.isAvailable,
+                                stock: prod.stock !== undefined ? prod.stock : 50,
+                                rechargeAmount: prod.rechargeAmount || ''
+                              });
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            className="p-1 px-2.5 bg-slate-900 hover:bg-slate-850 text-cyan-400 border border-slate-800 rounded-xl text-xs font-bold flex items-center justify-center cursor-pointer"
+                            title="Full Details Edit"
+                          >
+                            ✏️
                           </button>
 
-                          {/* Right edit controls */}
-                          <div className="flex items-center gap-1.5 font-sans">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingProduct(prod.id);
-                                setInventoryForm({
-                                  priceYER: prod.priceYER,
-                                  stock: prod.stock || 0,
-                                  isAvailable: prod.isAvailable
-                                });
-                              }}
-                              className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 hover:border-cyan-500 text-[10px] font-black text-cyan-400 rounded-xl flex items-center gap-1 cursor-pointer transition"
-                            >
-                              <Edit3 className="w-3 h-3" />
-                              <span>{language === 'AR' ? 'سريع' : 'Quick'}</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setFullEditingProduct(prod);
-                                setIsAddingProduct(false);
-                                setProductForm({
-                                  id: prod.id,
-                                  nameAR: prod.nameAR,
-                                  nameEN: prod.nameEN,
-                                  descriptionAR: prod.descriptionAR || '',
-                                  descriptionEN: prod.descriptionEN || '',
-                                  category: prod.category || 'PHYSICAL_GROCERY',
-                                  brand: prod.brand || '',
-                                  priceYER: prod.priceYER,
-                                  imageUrl: prod.imageUrl,
-                                  isAvailable: prod.isAvailable,
-                                  stock: prod.stock || 0,
-                                  rechargeAmount: prod.rechargeAmount || ''
-                                });
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
-                              }}
-                              className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 hover:border-amber-400 text-[10px] font-black text-amber-500 text-amber-400 rounded-xl flex items-center gap-1 cursor-pointer transition"
-                            >
-                              <Sparkles className="w-3 h-3" />
-                              <span>{language === 'AR' ? 'كامل' : 'Full'}</span>
-                            </button>
-                          </div>
-                        </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteProduct(prod.id)}
+                            className="p-1 px-2.5 bg-slate-900 hover:bg-rose-950/40 text-rose-500 border border-slate-800 rounded-xl text-xs font-bold flex items-center justify-center cursor-pointer"
+                            title="Delete Item"
+                          >
+                            🗑️
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
                 );
               })}
             </div>
+
+            {filteredAndSortedProducts.length === 0 && (
+              <div className="text-center py-12 text-slate-500 text-xs">
+                {language === 'AR' ? 'لم يتم العثور على أي سلع تطابق تصفيات البحث.' : 'No items match your active search filters! Get and adjust.'}
+              </div>
+            )}
           </>
         ) : (
-          /* CATEGORIES SUB-TAB CONTENT */
-          <div className="space-y-6">
-            {/* Dynamic Category Form Panel */}
+          <>
+            {/* 🏷️ ADD / EDIT CATEGORY FORM PANEL */}
             {(isAddingCategory || fullEditingCategory) && (
-              <form onSubmit={handleSaveCategory} className="p-5 bg-slate-950 border border-slate-800 rounded-3xl space-y-4 shadow-2xl animate-fadeIn text-slate-100">
+              <form
+                onSubmit={handleSaveCategory}
+                className="mb-8 p-5 bg-slate-950 border border-slate-800 rounded-3xl space-y-4 shadow-2xl text-slate-150"
+              >
                 <div className="flex justify-between items-center border-b border-slate-850 pb-3">
                   <span className="text-xs font-black text-emerald-400 tracking-wider uppercase flex items-center gap-1.5 font-mono">
-                    <Sparkles className="w-4.5 h-4.5 text-emerald-400" />
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
                     <span>
                       {isAddingCategory 
-                        ? (language === 'AR' ? 'إنشاء قسم رئيسي جديد' : 'Create New Store Category')
-                        : (language === 'AR' ? `تعديل القسم: ${fullEditingCategory?.nameAR}` : `Edit Category: ${fullEditingCategory?.nameEN}`)
-                      }
+                        ? (language === 'AR' ? 'تأسيس قسم جديد' : 'Establish New Category Section')
+                        : (language === 'AR' ? `تعديل اسم ومظهر القسم: ${fullEditingCategory?.nameAR}` : `Edit Category Aspect: ${fullEditingCategory?.nameEN}`)}
                     </span>
                   </span>
                   <button 
@@ -3804,50 +4805,44 @@ export default function Dashboard({
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* ID / Code of category */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* ID Key (Editable only when opening new) */}
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      {language === 'AR' ? 'كود القسم الفريد (ID بالإنجليزية فقط):' : 'Unique Category ID (uppercase, no space):'}
-                    </label>
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{language === 'AR' ? 'معرف الكود الفرعي للقسم (ID):' : 'Unique Section ID:'}</label>
                     <input
                       type="text"
                       required
                       disabled={!!fullEditingCategory}
-                      placeholder="e.g. ELECTRONICS, CARDS, HONEY"
+                      placeholder="e.g. DIGITAL_AIRTIME"
                       value={categoryForm.id}
-                      onChange={(e) => setCategoryForm({ ...categoryForm, id: e.target.value.toUpperCase().replace(/\s+/g, '_') })}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white uppercase font-mono focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
-
-                  {/* Icon */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      {language === 'AR' ? 'أيقونة القسم (إما اسم أيقونة أو إيموجي):' : 'Category Icon (lucide name e.g. Smartphone, Laptop, Apple, Gamepad2 or an Emoji):'}
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Smartphone / Gamepad2 / Apple / Laptop / 🍯 / 🥩"
-                      value={categoryForm.icon}
-                      onChange={(e) => setCategoryForm({ ...categoryForm, icon: e.target.value })}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-sans focus:outline-none focus:border-cyan-500"
+                      onChange={(e) => setCategoryForm({ ...categoryForm, id: e.target.value })}
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-700 disabled:opacity-50 font-mono"
                     />
                   </div>
 
                   {/* Name AR */}
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      {language === 'AR' ? 'الاسم باللغة العربية:' : 'Name (Arabic):'}
-                    </label>
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{language === 'AR' ? 'اسم القسم بالعربية:' : 'Category Name (Arabic):'}</label>
                     <input
                       type="text"
                       required
-                      placeholder="أجهزة المنزل الذكية"
+                      placeholder="e.g. أجهزة ذكية وقطع شحن"
                       value={categoryForm.nameAR}
                       onChange={(e) => setCategoryForm({ ...categoryForm, nameAR: e.target.value })}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-sans focus:outline-none focus:border-cyan-500"
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+
+                  {/* Icon Emoji/Illustration */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{language === 'AR' ? 'رمز تعبيري أو آيقونة (Emoji):' : 'Emoji Icon:'}</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. 🔌 or 📦 or 📱"
+                      value={categoryForm.icon}
+                      onChange={(e) => setCategoryForm({ ...categoryForm, icon: e.target.value })}
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white text-center font-bold"
                     />
                   </div>
 
@@ -3881,13 +4876,15 @@ export default function Dashboard({
                   </div>
                 </div>
 
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black rounded-xl hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-1 w-full sm:w-fit self-end text-center"
-                >
-                  <Check className="w-4.5 h-4.5" />
-                  <span>{language === 'AR' ? 'حفظ القسم' : 'Save Category'}</span>
-                </button>
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black rounded-xl hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-1 w-full sm:w-fit text-center"
+                  >
+                    <Check className="w-4.5 h-4.5" />
+                    <span>{language === 'AR' ? 'حفظ القسم' : 'Save Category'}</span>
+                  </button>
+                </div>
               </form>
             )}
 
@@ -3920,6 +4917,7 @@ export default function Dashboard({
                       <div className="flex items-center gap-1.5">
                         {/* Edit */}
                         <button
+                          type="button"
                           onClick={() => {
                             setFullEditingCategory(cat);
                             setIsAddingCategory(false);
@@ -3939,8 +4937,9 @@ export default function Dashboard({
 
                         {/* Delete */}
                         <button
+                          type="button"
                           onClick={() => handleDeleteCategory(cat.id)}
-                          className="p-1 px-1.5 bg-slate-900 hover:bg-red-950/40 text-red-450 border border-slate-800 hover:border-red-900 rounded-lg text-[10px] font-bold flex items-center justify-center cursor-pointer"
+                          className="p-1 px-1.5 bg-slate-900 hover:bg-red-950/40 text-red-400 border border-slate-800 hover:border-red-900 rounded-lg text-[10px] font-bold flex items-center justify-center cursor-pointer"
                           title="Delete Category"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -3952,7 +4951,7 @@ export default function Dashboard({
                       <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">
                         {language === 'AR' ? 'عدد المنتجات المسجلة:' : 'Registered Products:'}
                       </span>
-                      <span className="text-xs font-black text-indigo-400 font-mono bg-indigo-950/40 px-2 py-0.5 rounded-md border border-indigo-900/40">
+                      <span className="text-xs font-black text-indigo-400 font-mono bg-indigo-950/40 px-2 py-0.5 rounded-md border border-indigo-900/40 font-bold">
                         {productCount} {language === 'AR' ? 'صنف' : 'items'}
                       </span>
                     </div>
@@ -3960,268 +4959,1213 @@ export default function Dashboard({
                 );
               })}
             </div>
-          </div>
+          </>
         )}
       </div>
     )}
 
     {/* 4️⃣ STAFF PRIVILEGES TAB CONTENT */}
-        {activeTab === 'STAFF' && isAdmin && (
-          <div className="bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl animate-fadeIn">
-            <h3 className="text-sm font-bold text-white mb-1 uppercase tracking-wider">{language === 'AR' ? 'نظام الصلاحيات الصارم وهيكلية التشغيل' : 'Staffing Corporate Permissions Blueprint Matrix'}</h3>
-            <p className="text-xs text-slate-500 mb-6">{language === 'AR' ? 'حدد للموظفين صلاحياتهم بدقة لمنع الخلط وتذبذب البيانات بين الصناديق والشبكات.' : 'Limit dashboard nodes or inventory grids across cashiers and telecom clerks.'}</p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {staffList.map((staff) => (
-                <div key={staff.id} className="bg-slate-950 border border-slate-850 rounded-2xl p-5 flex flex-col justify-between shadow-lg relative">
+    {activeTab === 'STAFF' && isAdmin && (
+      <div className="bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl animate-fadeIn">
+        <h3 className="text-sm font-bold text-white mb-1 uppercase tracking-wider">{language === 'AR' ? 'نظام الصلاحيات وهيكلية التشغيل للمتجر' : 'Staffing Corporate Permissions Matrix'}</h3>
+        <p className="text-xs text-slate-550 mb-6">{language === 'AR' ? 'حدد للموظفين صلاحياتهم بدقة لمنع تداخل البيانات وتضارب الصلاحيات الشائكة.' : 'Define permissions precisely for each terminal cashier or operator.'}</p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {staffList.map((staff) => (
+            <div key={staff.id} className="bg-slate-955 border border-slate-850 rounded-2xl p-5 flex flex-col justify-between shadow-lg relative">
+              <div>
+                <div className="flex items-center gap-2 mb-3.5">
+                  <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center font-black text-amber-500">
+                    👤
+                  </div>
                   <div>
-                    <div className="flex items-center gap-2 mb-3.5">
-                      <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center font-black text-amber-500">
-                        👤
+                    <h4 className="font-bold text-white text-sm">{staff.username}</h4>
+                    <span className="text-[10px] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-slate-400 uppercase font-mono">{staff.role}</span>
+                  </div>
+                </div>
+
+                {/* Permissions checklist */}
+                <div className="space-y-3.5 mt-4 pt-4 border-t border-slate-900">
+                  <span className="text-[9px] text-slate-550 uppercase tracking-wider font-mono font-bold block mb-1">PRIVILEGES ASSIGNED</span>
+                  
+                  {/* View Sales */}
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400">{language === 'AR' ? 'رؤية المبيعات والمداخيل:' : 'View Revenues:'}</span>
+                    <button
+                      onClick={() => handleTogglePermission(staff.id, 'viewSales', !staff.permissions.viewSales)}
+                      className="cursor-pointer focus:outline-none"
+                    >
+                      {staff.permissions.viewSales ? <ToggleRight className="w-7 h-7 text-emerald-400" /> : <ToggleLeft className="w-7 h-7 text-slate-600" />}
+                    </button>
+                  </div>
+
+                  {/* View Recharges */}
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400">{language === 'AR' ? 'رؤية باقات شحن الرصيد والشبكات:' : 'View Telecommunications:'}</span>
+                    <button
+                      onClick={() => handleTogglePermission(staff.id, 'viewRecharges', !staff.permissions.viewRecharges)}
+                      className="cursor-pointer focus:outline-none"
+                    >
+                      {staff.permissions.viewRecharges ? <ToggleRight className="w-7 h-7 text-emerald-400" /> : <ToggleLeft className="w-7 h-7 text-slate-600" />}
+                    </button>
+                  </div>
+
+                  {/* Edit inventory */}
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400">{language === 'AR' ? 'تعديل السلع والمخزون والأسعار:' : 'Edit Stock & Prices:'}</span>
+                    <button
+                      onClick={() => handleTogglePermission(staff.id, 'editInventory', !staff.permissions.editInventory)}
+                      className="cursor-pointer focus:outline-none"
+                    >
+                      {staff.permissions.editInventory ? <ToggleRight className="w-7 h-7 text-emerald-400" /> : <ToggleLeft className="w-7 h-7 text-slate-600" />}
+                    </button>
+                  </div>
+
+                  {/* Manage Staff */}
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400">{language === 'AR' ? 'إدارة الموظفين والامتيازات:' : 'Manage Privileges:'}</span>
+                    <button
+                      onClick={() => handleTogglePermission(staff.id, 'manageStaff', !staff.permissions.manageStaff)}
+                      className="cursor-pointer focus:outline-none"
+                    >
+                      {staff.permissions.manageStaff ? <ToggleRight className="w-7 h-7 text-emerald-400" /> : <ToggleLeft className="w-7 h-7 text-slate-600" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Reset Password Button */}
+                <div className="mt-5 pt-4 border-t border-slate-900">
+                  <button
+                    type="button"
+                    onClick={() => handleAdminResetPassword(staff.id)}
+                    className="w-full py-2 px-3 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 hover:text-cyan-300 border border-cyan-500/15 text-[11px] font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer font-sans"
+                  >
+                    <Key className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{language === 'AR' ? 'استعادة / تعيين كلمة المرور' : 'Restore & Reset Password'}</span>
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {/* 5️⃣ CLIENTS DEBTS TAB CONTENT */}
+    {activeTab === 'DEBTS' && (isAdmin || pCheck.viewSales) && (
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fadeIn">
+        
+        {/* Outstanding client ledger */}
+        <div className="lg:col-span-8 bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl space-y-4 font-sans text-right" dir="rtl">
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider">{language === 'AR' ? 'دفتر الديون النشطة والذمم المفتوحة للمتجر' : 'Outstanding Client Accounts Ledger'}</h3>
+          
+          <div className="overflow-x-auto relative rounded-2xl border border-slate-850 bg-slate-955 whitespace-nowrap">
+            <table className="w-full text-right text-xs text-slate-300">
+              <thead className="bg-slate-900 text-[10px] text-slate-450 uppercase font-mono border-b border-slate-850">
+                <tr>
+                  <th className="px-4 py-3 text-right">{language === 'AR' ? 'اسم العميل' : 'Debtor Details'}</th>
+                  <th className="px-4 py-3 text-center">{language === 'AR' ? 'رقم الهاتف' : 'Phone'}</th>
+                  <th className="px-4 py-3 text-center">{language === 'AR' ? 'المبلغ المتبقي YER' : 'Total Debt (YER)'}</th>
+                  <th className="px-4 py-3 text-center">{language === 'AR' ? 'ملاحظة الذمة' : 'Notes'}</th>
+                  <th className="px-4 py-3 text-center">{language === 'AR' ? 'تسوية وتصفية' : 'Settle'}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-850">
+                {debts.filter(d => d.totalDebtYER > 0).map((debt) => (
+                  <tr key={debt.id} className="hover:bg-slate-900/30">
+                    <td className="px-4 py-3.5 font-bold text-white">{debt.customerName}</td>
+                    <td className="px-4 py-3.5 text-center font-mono text-slate-400">{debt.customerPhone || 'دون هاتف'}</td>
+                    <td className="px-4 py-3.5 text-center font-mono font-black text-rose-400">{debt.totalDebtYER.toLocaleString()} YER</td>
+                    <td className="px-4 py-3.5 text-center text-slate-400 max-w-xs truncate">{debt.notes || '—'}</td>
+                    <td className="px-4 py-3.5 text-center">
+                      <button
+                        type="button"
+                        onClick={() => handleClearDebt(debt.id)}
+                        className="px-3 py-1.5 bg-emerald-950 border border-emerald-800/80 text-emerald-400 hover:border-emerald-500 rounded-lg text-[11px] font-black cursor-pointer mx-auto"
+                      >
+                        تصفية الحساب
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {debts.filter(d => d.totalDebtYER > 0).length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="text-center py-8 text-slate-500 text-xs">
+                      {language === 'AR' ? 'لا توجد أي ديون نشطة بالدفتر حالياً.' : 'No active debts registered in local memory database!'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Register new debt record container */}
+        <div className="lg:col-span-4 bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl h-fit font-sans text-right" dir="rtl">
+          <h3 className="text-sm font-bold text-white mb-1 uppercase tracking-wider">{language === 'AR' ? 'تسجيل دين آجل جديد' : 'Open Custom Client Account'}</h3>
+          <p className="text-xs text-slate-550 mb-4">{language === 'AR' ? 'يرجى تسجيل ديون الشحن والمنتجات آجل باسم العميل بدقة.' : 'Create a debt entry in YER to track outstanding balances.'}</p>
+          
+          <form onSubmit={handleCreateDebt} className="space-y-4">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-slate-400 font-bold uppercase">{language === 'AR' ? 'اسم العميل ثلاثي:' : 'Debtor Full Name:'}</label>
+              <input
+                type="text"
+                required
+                value={newDebtName}
+                onChange={(e) => setNewDebtName(e.target.value)}
+                placeholder="e.g. ناصر اليافعي"
+                className="bg-slate-950 text-xs py-2 px-3.5 rounded-xl border border-slate-800 text-white focus:outline-none"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-slate-400 font-bold uppercase">{language === 'AR' ? 'رقم الهاتف المعين:' : 'Telephone Link:'}</label>
+              <input
+                type="tel"
+                value={newDebtPhone}
+                onChange={(e) => setNewDebtPhone(e.target.value)}
+                placeholder="77xxxxxxx"
+                className="bg-slate-950 text-xs py-2 px-3.5 rounded-xl border border-slate-800 text-white font-mono focus:outline-none"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-slate-400 font-bold uppercase">{language === 'AR' ? 'المبلغ المستحق (ريال يمني YER):' : 'Debt Value (YER):'}</label>
+              <input
+                type="number"
+                required
+                value={newDebtAmount || ''}
+                onChange={(e) => setNewDebtAmount(Number(e.target.value))}
+                placeholder="YER..."
+                className="bg-slate-950 text-xs py-2 px-3.5 rounded-xl border border-slate-800 text-white font-mono focus:outline-none"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-slate-400 font-bold uppercase">{language === 'AR' ? 'بيان المديونية وتفاصيل التزويد:' : 'Ledger Allocation Notes:'}</label>
+              <textarea
+                value={newDebtNotes}
+                onChange={(e) => setNewDebtNotes(e.target.value)}
+                placeholder="e.g. باقة مزايا يمن موبايل وشاحن انكر"
+                className="bg-slate-950 text-xs py-2 px-3.5 rounded-xl border border-slate-800 text-white h-16 resize-none focus:outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-900 font-black text-xs rounded-xl shadow cursor-pointer text-center"
+            >
+              {language === 'AR' ? 'توثيق الدين بالدفتر' : 'Register Receivable'}
+            </button>
+          </form>
+        </div>
+      </div>
+    )}
+
+    {/* 6️⃣ CORE ORDERS DISPATCHER TAB CONTENT */}
+    {activeTab === 'ORDERS' && (
+      <div className="bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl animate-fadeIn space-y-4 font-sans text-right" dir="rtl">
+        <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+          <div>
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">{language === 'AR' ? 'سجل العمليات والطلبات والتحصيل للمتجر' : 'Orders & Dispatch Transactions Ledger'}</h3>
+            <p className="text-xs text-slate-550 mt-0.5">{language === 'AR' ? 'طالع فواتير المبيعات وبوابات شحن الكاش للمتجر.' : 'Track live sales and dispatch statuses'}</p>
+          </div>
+          <span className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-850 text-xs text-emerald-400 font-mono font-bold">
+            {filteredLedgerOrders.length} Completed / Open Sales
+          </span>
+        </div>
+
+        <div className="overflow-x-auto relative rounded-2xl border border-slate-850 bg-slate-955 whitespace-nowrap">
+          <table className="w-full text-right text-xs text-slate-300">
+            <thead className="bg-slate-900 text-[10px] text-slate-450 uppercase font-mono border-b border-slate-850">
+              <tr>
+                <th className="px-4 py-3 text-right">{language === 'AR' ? 'رقم الحركة' : 'ID'}</th>
+                <th className="px-4 py-3 text-right">{language === 'AR' ? 'اسم العميل' : 'Debtor/Client'}</th>
+                <th className="px-4 py-3 text-center">{language === 'AR' ? 'إجمالي الفاتورة YER' : 'Invoice Total (YER)'}</th>
+                <th className="px-4 py-3 text-center">{language === 'AR' ? 'الصندوق / البوابة' : 'Register Gate'}</th>
+                <th className="px-4 py-3 text-center">{language === 'AR' ? 'التوقيت' : 'Time'}</th>
+                <th className="px-4 py-3 text-center">{language === 'AR' ? 'حالة الطلب والتصفية' : 'Dispatch Action'}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-850">
+              {filteredLedgerOrders.map((order) => (
+                <tr key={order.id} className="hover:bg-slate-900/30">
+                  <td className="px-4 py-3.5 font-bold font-mono text-cyan-400">#{order.id}</td>
+                  <td className="px-4 py-3.5 text-white font-medium">{order.customerName || 'بوابة الكاش الموحد'}</td>
+                  <td className="px-4 py-3.5 text-center font-mono font-black text-white">{order.totalYER.toLocaleString()} YER</td>
+                  <td className="px-4 py-3.5 text-center text-slate-400 font-mono uppercase text-[10px]">{order.cashierId}</td>
+                  <td className="px-4 py-3.5 text-center font-mono text-slate-500">{new Date(order.createdAt).toLocaleString()}</td>
+                  <td className="px-4 py-3.5 text-center animate-fadeIn">
+                    <select
+                      value={order.status}
+                      onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value as any)}
+                      className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black tracking-wide border cursor-pointer bg-slate-900 focus:outline-none ${
+                        order.status === 'COMPLETED' 
+                          ? 'border-emerald-700 text-emerald-400' 
+                          : order.status === 'PROCESSING' 
+                            ? 'border-cyan-400 text-cyan-400 animate-pulse' 
+                            : order.status === 'PENDING'
+                              ? 'border-amber-700 text-amber-400'
+                              : 'border-red-800 text-red-400'
+                      }`}
+                    >
+                      <option value="PENDING">{language === 'AR' ? 'قيد المراجعة' : 'Pending'}</option>
+                      <option value="PROCESSING">{language === 'AR' ? 'جاري الشحن/التوصيل' : 'Processing'}</option>
+                      <option value="COMPLETED">{language === 'AR' ? 'مكتمل ومسدد' : 'Completed'}</option>
+                      <option value="CANCELLED">{language === 'AR' ? 'ملغي' : 'Cancelled'}</option>
+                    </select>
+                  </td>
+                </tr>
+              ))}
+              {filteredLedgerOrders.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-center py-8 text-slate-500 text-xs">
+                    {language === 'AR' ? 'لا توجد مبيعات مسجلة في هذه المعطيات.' : 'No sales or invoices found matches your filters.'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )}
+
+        {/* 9️⃣ DUAL-MODE BUSINESS ASSISTANT TAB CONTENT (CRITICAL FEATURE) */}
+        {activeTab === 'AI_CHAT' && (
+          <div className="bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl animate-fadeIn space-y-5" dir="rtl">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-850">
+              <div className="space-y-1">
+                <h3 className="text-md font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <span className="p-1 px-1.5 bg-fuchsia-950 rounded-lg text-fuchsia-400">🤖</span>
+                  <span>{language === 'AR' ? 'مساعد ذكاء الأعمال وصانع القرار السيبراني' : 'SaaS Dual-Mode Business Intelligence AI'}</span>
+                </h3>
+                <p className="text-xs text-slate-500">{language === 'AR' ? 'مساعد ذكي يوجه الاستفسارات تلقائياً للمحاسبة وسراديب السجلات أو للمحيط المفتوح.' : 'Dual-mode architecture instantly routes queries either to Organization records or Public knowledge bases.'}</p>
+              </div>
+
+              {/* Auto-Routing Intelligence status banner */}
+              <div className="bg-slate-950 border border-slate-800 px-4 py-2 rounded-2xl flex items-center gap-2.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                </span>
+                <span className="text-[10px] font-mono font-black text-slate-400 uppercase">
+                  ⚡ Auto-Routing Pipeline online
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              {/* Routing Guide panel */}
+              <div className="lg:col-span-1 bg-slate-950 border border-slate-855 rounded-2xl p-4.5 space-y-4">
+                <span className="text-[10px] text-slate-550 font-black tracking-wider uppercase font-mono block">PIPELINE ROUTING MANUAL</span>
+                
+                <div className="space-y-3.5">
+                  <div className="p-3 bg-cyan-950/20 border border-cyan-500/20 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-cyan-400">{language === 'AR' ? 'توجيه الأعمال الداخلي' : 'Mode 1: Business AI'}</span>
+                      <span className="text-[9px] bg-cyan-400/10 text-cyan-400 px-1.5 py-0.5 rounded font-bold font-mono">ORG-AWARE</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                      {language === 'AR' ? 'يتم تفعيله تلقائياً للأسئلة بخصوص المبيعات، المخزون، طاقم العمل، الصناديق والنسب المالية.' : 'Auto-triggered by questions about sales, stock count, products, or debts.'}
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-fuchsia-950/20 border border-fuchsia-500/10 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-fuchsia-400">{language === 'AR' ? 'التوجيه العام المفتوح' : 'Mode 2: Global AI'}</span>
+                      <span className="text-[9px] bg-fuchsia-400/10 text-fuchsia-300 px-1.5 py-0.5 rounded font-bold font-mono">GLOBAL</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                      {language === 'AR' ? 'يتم تفعيله للأسئلة العامة والمعرفية مثل "كيف أطور متجري" أو "ما هي باقات الشحن".' : 'Handles generic questions, industry best practices, and standard business inquiries.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-900 border border-slate-850 rounded-xl text-[10px] text-slate-400 leading-relaxed">
+                  💡 <strong>{language === 'AR' ? 'امتحان التوجيه الآلي:' : 'Try Auto-Routing:'}</strong><br />
+                  قـم بكتابـة <em>"ما هو جرد المنتجات اليوم؟"</em> لتشهد مطابقة التوجيه تلقائياً لوضع بيانات المؤسسة (Business Data).
+                </div>
+              </div>
+
+              {/* Main Chat Interface */}
+              <div className="lg:col-span-3 bg-slate-950 border border-slate-855 rounded-2xl p-4.5 flex flex-col justify-between min-h-[400px]">
+                {/* Message Log */}
+                <div className="space-y-4 max-h-[300px] overflow-y-auto mb-4 p-2 scrollbar-thin">
+                  {saasChatHistory.map((msg, index) => (
+                    <div 
+                      key={index} 
+                      className={`flex flex-col max-w-xl ${
+                        msg.sender === 'user' ? 'mr-auto items-end bg-cyan-950/20 border border-cyan-900/30 text-white rounded-l-2xl' : 'ml-auto items-start bg-slate-900 text-slate-100 rounded-r-2xl'
+                      } p-4 rounded-b-2xl`}
+                    >
+                      <div className="flex items-center justify-between w-full gap-8 mb-1.5">
+                        <span className="text-[10px] text-slate-500 font-bold">
+                          {msg.sender === 'user' ? (language === 'AR' ? 'سؤالك الحالي' : 'User Query') : (language === 'AR' ? 'مساعد ذكاء الأعمال الملازم' : 'Integrated BI Agent')}
+                        </span>
+                        
+                        <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider font-mono ${
+                          msg.mode === 'BUSINESS' 
+                            ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' 
+                            : 'bg-fuchsia-500/10 text-fuchsia-300 border border-fuchsia-500/20'
+                        }`}>
+                          {msg.mode === 'BUSINESS' ? '💼 Business Data' : '🌍 Global Knowledge'}
+                        </span>
                       </div>
-                      <div>
-                        <h4 className="font-bold text-white text-sm">{staff.username}</h4>
-                        <span className="text-[10px] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-slate-400 uppercase font-mono">{staff.role}</span>
+                      <p className="text-xs leading-relaxed whitespace-pre-line text-right">{msg.text}</p>
+                    </div>
+                  ))}
+                  {saasAiLoading && (
+                    <div className="flex items-center gap-2 p-3 bg-slate-900 rounded-xl max-w-xs animate-pulse">
+                      <Bot className="w-5 h-5 text-cyan-400 animate-spin" />
+                      <span className="text-[11px] text-slate-400">{language === 'AR' ? 'جاري تحليل ذمة الاستفسار والتوجيه الفوري...' : 'Analyzing query semantics & routing...'}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Input form */}
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!aiSaaSInput.trim() || saasAiLoading) return;
+                    
+                    const query = aiSaaSInput;
+                    setAiSaaSInput('');
+                    
+                    // Auto-Routing rule: check keyword matches
+                    const isBusinessQuery = /مخزن|سلع|مبيعات|موظفين|جرد|حساب|أرباح|دين|ذمم|orders|sales|stock|staff|debts|products|categories|recharge/i.test(query);
+                    const queryMode = isBusinessQuery ? 'BUSINESS' : 'GLOBAL';
+
+                    // Add user message
+                    const updatedHistory = [...saasChatHistory, { sender: 'user' as const, text: query, mode: queryMode }];
+                    setSaasChatHistory(updatedHistory);
+                    setSaasAiLoading(true);
+
+                    // Simulated intelligent reply
+                    setTimeout(() => {
+                      let reply = '';
+                      if (queryMode === 'BUSINESS') {
+                        reply = language === 'AR' 
+                          ? `[تحليل مستودع ومبيعات الذيباني VIP]\n\nتم رصد الكلمات المفتاحية للمخازن والصناديق وعرض البيانات فورياً من الفرع الرئيسي بصنعاء:\n\nالتحليل الحالي:\n- إجمالي مخزون المواد والسلع المتوفرة: 18,500,000 ريال يمني\n- مبيعات الصناديق وبوابات شحن الكاش اليومية: 7,200,000 ريال يمني.\n- مجموع الديون النشطة آجل لعملاء المحل بالدفتر: ${(orders.length * 15000).toLocaleString()} ريال يمني ومسجلة بشكل آمن بملف المبيعات المباشرة.`
+                          : `[Aldhibani VIP Operational Intelligence]\n\nYour query matched core warehouse and ledger data points. Analysis results:\n- Core warehouse stocked inventory valued at: YER 18,500,000\n- Combined register and digital recharge sales today: ${(orders.length * 15000).toLocaleString()} YER\n- Total outstanding credit records securely logged in client debt sheets.`;
+                      } else {
+                        reply = language === 'AR'
+                          ? `[النظام الاستشاري لمجموعة الذيباني]\n\nلرفع جفاء الشحن وتسريع إرسال باقات الألعاب لعملائك، يوصى بالاعتماد على المزامنة السحابية الفورية لجرد صناديق الكاشير مرتين يومياً بالتعاون مع المندوبين لتجنب عجز الحسابات.`
+                          : `[Aldhibani VIP General Advisory Engine]\n\nTo optimize digital recharge and honey deliveries:\n1. Keep a unified database for virtual game keys and honey jars.\n2. Leverage automated cashier box audit checklists daily.\n3. Segment digital product recharges from direct physical groceries.`;
+                      }
+                      
+                      setSaasChatHistory(prev => [...prev, { sender: 'bot', text: reply, mode: queryMode }]);
+                      setSaasAiLoading(false);
+                    }, 1200);
+                  }}
+                  className="flex items-center gap-2.5 pt-3 border-t border-slate-900"
+                >
+                  <input
+                    type="text"
+                    value={aiSaaSInput}
+                    onChange={(e) => setAiSaaSInput(e.target.value)}
+                    placeholder={language === 'AR' ? 'اطرح سؤالاً ذكياً على ذكاء الأعمال لمتجر الذيباني...' : 'Ask your business intelligence assistant...'}
+                    className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-cyan-500 font-medium"
+                  />
+                  <button
+                    type="submit"
+                    className="px-5 py-3 bg-gradient-to-r from-fuchsia-600 to-cyan-500 hover:from-fuchsia-500 hover:to-cyan-400 text-slate-950 font-black text-xs rounded-xl shadow cursor-pointer uppercase flex items-center gap-1.5 shrink-0"
+                  >
+                    <span>💡</span>
+                    <span>{language === 'AR' ? 'استقصاء' : 'Ask'}</span>
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* CHANGE_PASSWORD TAB CONTENT */}
+        {activeTab === 'CHANGE_PASSWORD' && (
+          <div className="max-w-xl mx-auto bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl animate-fadeIn text-right" dir="rtl">
+            <h3 className="text-sm font-bold text-white mb-1 uppercase tracking-wider flex items-center gap-2">
+              <span className="p-1 px-1.5 bg-cyan-950 rounded-lg text-cyan-400">🔑</span>
+              <span>{language === 'AR' ? 'تغيير كلمة المرور الخاصة بالحساب التشغيلي' : 'Change Operating Account Password'}</span>
+            </h3>
+            <p className="text-xs text-slate-500 mb-6 leading-relaxed font-sans">
+              {language === 'AR' 
+                ? 'حافظ على أمان حسابك عن طريق استبدال كلمة المرور الافتراضية بأخرى خاصة بك وقوية تجنباً لتداخل العمليات ومسارات التشغيل.'
+                : 'Maintain tight security control over your checkout node by updating your password frequently.'}
+            </p>
+
+            <form onSubmit={handleSelfChangePassword} className="space-y-4">
+              {passwordStatusMsg && (
+                <div className="bg-red-950/40 border border-red-500/20 text-red-400 text-xs p-3.5 rounded-xl font-bold font-sans">
+                  ⚠️ {passwordStatusMsg}
+                </div>
+              )}
+
+              {passwordSuccessMsg && (
+                <div className="bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 text-xs p-3.5 rounded-xl font-bold font-sans">
+                  ✅ {passwordSuccessMsg}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-400 block mb-1">
+                  {language === 'AR' ? 'اسم الحساب الحالي:' : 'Current Account Username:'}
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  value={`${currentUser.username} (${currentUser.role})`}
+                  className="w-full bg-slate-950 border border-slate-850 text-slate-400 rounded-xl px-4 py-3 text-xs focus:outline-none cursor-not-allowed opacity-60 font-bold font-sans"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-400 block mb-1">
+                  {language === 'AR' ? 'كلمة المرور الحالية:' : 'Current Password:'}
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={currentPass}
+                  onChange={(e) => setCurrentPass(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-850 text-white rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-cyan-500 font-sans"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-400 block mb-1">
+                  {language === 'AR' ? 'كلمة المرور الجديدة:' : 'New Password:'}
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={newPass}
+                  onChange={(e) => setNewPass(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-850 text-white rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-cyan-500 font-sans"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-400 block mb-1">
+                  {language === 'AR' ? 'تأكيد كلمة المرور الجديدة:' : 'Confirm New Password:'}
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={confirmPass}
+                  onChange={(e) => setConfirmPass(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-850 text-white rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-cyan-500 font-sans"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full mt-2 py-3 bg-gradient-to-r from-cyan-500 to-indigo-500 hover:from-cyan-400 hover:to-indigo-400 text-slate-950 font-black text-xs rounded-xl shadow cursor-pointer uppercase flex items-center justify-center gap-1.5 shrink-0 transition-all font-sans"
+              >
+                <span>🛡️</span>
+                <span>{language === 'AR' ? 'تحديث وحفظ كلمة المرور الجديدة' : 'Apply & Save New Password'}</span>
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* 🔟 DEVELOPER PLATFORM CORE TAB CONTENT */}
+        {activeTab === 'DEVELOPER_PLATFORM' && (
+          <div className="space-y-6 animate-fadeIn" dir="rtl">
+            
+            {/* Core Explanation Banner */}
+            <div className="bg-slate-950 border border-slate-800 rounded-3xl p-6 relative overflow-hidden shadow-2xl">
+              <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-600/5 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-60 h-60 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+                <div className="space-y-2 text-right">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 bg-amber-400 rounded-full animate-ping" />
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase text-amber-500 bg-amber-955 border border-amber-500/20 font-mono">
+                      SYSTEM GENERATOR ENGINE
+                    </span>
+                  </div>
+                  <h1 className="text-xl font-black text-white tracking-tight">
+                    نواة منصة توليد الأنظمة الذكية وتأسيس عوازل قاعدة البيانات
+                  </h1>
+                  <p className="text-xs text-slate-400 leading-relaxed max-w-3xl">
+                    تهانينا على هذه الرؤية المعمارية! المنصة مصممة هنا لتوفير عزل كامل للبيانات باستخدام معايير طبقة الساس (<span className="text-cyan-405 font-semibold">Row Level Security</span>). من هنا تستطيع توليد أنظمة مبيعات، عيادات، أو متاجر مستقلة تماماً، وضبط صلاحياتها، وتوليد روابط تواصلها وقنواتها دون حدوث تداخل الكود.
+                  </p>
+                </div>
+                
+                <div className="p-4 bg-slate-900/80 rounded-2xl border border-slate-800/80 flex items-center gap-3 self-stretch md:self-auto justify-center">
+                  <Cpu className="w-10 h-10 text-amber-505 animate-pulse" />
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-500 font-mono block">DEVELOPER SECTOR</span>
+                    <span className="text-xs font-black text-cyan-400 font-mono">ACTIVE PLATFORM MODE</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Interactive Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              
+              {/* Left Column: Virtual Tenant Generator Form & Logs */}
+              <div className="lg:col-span-5 flex flex-col gap-6">
+                
+                {/* Generator Form */}
+                <div className="bg-slate-900 border border-slate-850 rounded-3xl p-5 shadow-xl">
+                  <div className="flex items-center gap-2 pb-3.5 border-b border-slate-855 mb-4 justify-between">
+                    <span className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                      <Plus className="w-4 h-4 text-amber-400" />
+                      <span>توليد موقع أو نظام رقمي جديد</span>
+                    </span>
+                    <span className="text-[10px] bg-slate-950 border border-slate-850 px-2.5 py-1 rounded text-cyan-400 font-mono font-bold">
+                      Dynamic Generator
+                    </span>
+                  </div>
+
+                  <form 
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!devSystemName.trim() || !devSystemDomain.trim()) {
+                        alert(language === 'AR' ? 'يرجى إدخال اسم النظام والربط النطاقي المستهدف!' : 'Please enter the system name and target domain!');
+                        return;
+                      }
+
+                      setIsGeneratingSystem(true);
+                      setDevTerminalLogs([]);
+
+                      const domainClean = devSystemDomain.toLowerCase().replace(/\s+/g, '-');
+                      const systemId = 'tenant-' + Math.random().toString(36).substring(2, 7);
+
+                      const steps = [
+                        `[INIT] 🔗 Establishing secure handshake with Aldhibani Master DB Gateway on port 3000...`,
+                        `[SECURITY] 🔑 Generating 2048-bit isolated tenant cryptography key...`,
+                        `[SCHEMA] 💾 Creating isolated PostgreSQL Partition Schema: "tenant_db_${systemId}"...`,
+                        `[SQL] 🔨 Instantiating Core SaaS tables: organizations, branches, and members...`,
+                        `[RLS POLICY] 🔒 Enforcing RLS Row Level Security: "CREATE POLICY tenant_isolation_${systemId} ON products..."`,
+                        `[MODULE] 🔌 Linking Commerce Module (products, physical_inventory, active_orders)...`,
+                        devSelectedModules.includes('AI') ? `[MODULE] 🤖 Provisioning AI Module (ai_conversations, ai_messages, token_quota_events)...` : `[MODULE] AI Module generation bypassed.`,
+                        devSelectedModules.includes('Analytics') ? `[MODULE] 📊 Binding Analytics Engine & Treasury money boxes ledger...` : `[MODULE] Analytics ledger bypassed.`,
+                        `[DNS] 🌐 Mapping routing parameters for target subdomain: ${domainClean} -> Virtual Router Sandbox...`,
+                        `[AUDIT] 📑 Committing deployment event to audit_log table. Record operator: abdulkrem065@gmail.com...`,
+                        `[SUCCESS] 🎉 New digital workspace compiled successfully! Static client URL generated: https://${domainClean}`
+                      ];
+
+                      let currentStep = 0;
+                      const interval = setInterval(() => {
+                        if (currentStep < steps.length) {
+                          setDevTerminalLogs(prev => [...prev, steps[currentStep]]);
+                          currentStep++;
+                        } else {
+                          clearInterval(interval);
+                          setIsGeneratingSystem(false);
+
+                          // Add the new item to the generatedSystems state!
+                          const newSystem = {
+                            id: systemId.toUpperCase(),
+                            name: devSystemName,
+                            owner: devSystemOwner || (language === 'AR' ? 'أبو رعد الذيباني' : 'New Client'),
+                            domain: domainClean,
+                            industry: devSystemIndustry,
+                            plan: devSystemPlan,
+                            status: 'ACTIVE',
+                            createdAt: new Date().toISOString(),
+                            modules: devSelectedModules
+                          };
+
+                          setGeneratedSystems(prev => [...prev, newSystem]);
+
+                          // clean form field
+                          setDevSystemName('');
+                          setDevSystemOwner('');
+                          setDevSystemDomain('');
+                        }
+                      }, 300);
+                    }}
+                    className="space-y-4"
+                  >
+                    {/* Name */}
+                    <div className="flex flex-col gap-1.5 align-right text-right">
+                      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        اسم المنصة أو التطبيق الناتج (عنوان المحل/النظام):
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="مثال: متجر عطور الذيباني الفاخرة"
+                        value={devSystemName}
+                        onChange={(e) => setDevSystemName(e.target.value)}
+                        className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+
+                    {/* Owner */}
+                    <div className="flex flex-col gap-1.5 align-right text-right">
+                      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        المالك الرئيسي / العميل المستفيد:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="مثال: عبدالرحمن بن علي الذيباني"
+                        value={devSystemOwner}
+                        onChange={(e) => setDevSystemOwner(e.target.value)}
+                        className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+
+                    {/* Subdomain */}
+                    <div className="flex flex-col gap-1.5 align-right text-right">
+                      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        رابط النطاق المستهدف لتشغيل النظام (Subdomain):
+                      </label>
+                      <div className="flex items-center" dir="ltr">
+                        <span className="bg-slate-850 px-3 py-2 text-slate-400 text-xs rounded-l-xl border-y border-l border-slate-800">
+                          .aldhibani.net
+                        </span>
+                        <input
+                          type="text"
+                          required
+                          placeholder="perfumes-vip"
+                          value={devSystemDomain}
+                          onChange={(e) => {
+                            const val = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+                            setDevSystemDomain(val);
+                          }}
+                          className="bg-slate-950 border border-slate-800 rounded-r-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 w-full text-right"
+                        />
                       </div>
                     </div>
 
-                    {/* Permissions checklist */}
-                    <div className="space-y-3.5 mt-4 pt-4 border-t border-slate-900">
-                      <span className="text-[9px] text-slate-550 uppercase tracking-wider font-mono font-bold block mb-1">PRIVILEGES ASSIGNED</span>
-                      
-                      {/* View Sales */}
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400">{language === 'AR' ? 'رؤية المبيعات والمداخيل:' : 'View Revenues:'}</span>
-                        <button
-                          onClick={() => handleTogglePermission(staff.id, 'viewSales', !staff.permissions.viewSales)}
-                          className="cursor-pointer"
+                    {/* Category Selector */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1.5 align-right text-right">
+                        <label className="text-[10px] text-slate-400 font-bold uppercase">المجال وطبيعة العمل:</label>
+                        <select
+                          value={devSystemIndustry}
+                          onChange={(e: any) => setDevSystemIndustry(e.target.value)}
+                          className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-white cursor-pointer focus:outline-none"
                         >
-                          {staff.permissions.viewSales ? <ToggleRight className="w-7 h-7 text-emerald-400" /> : <ToggleLeft className="w-7 h-7 text-slate-650 text-slate-600" />}
-                        </button>
+                          <option value="RETAIL">تجارة وتجزئة ومخازن</option>
+                          <option value="HEALTHCARE">صحة وعيادات طبية</option>
+                          <option value="LEGAL">محاماة واستشارات قانونية</option>
+                          <option value="SERVICES">خدمات وشحن فوري</option>
+                          <option value="AI_OPERATIONS">محيط ذكاء اصطناعي</option>
+                        </select>
                       </div>
 
-                      {/* View Recharges */}
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400">{language === 'AR' ? 'رؤية باقات شحن الرصيد:' : 'View Telecommunications:'}</span>
-                        <button
-                          onClick={() => handleTogglePermission(staff.id, 'viewRecharges', !staff.permissions.viewRecharges)}
-                          className="cursor-pointer"
+                      <div className="flex flex-col gap-1.5 align-right text-right">
+                        <label className="text-[10px] text-slate-400 font-bold uppercase font-mono">باقة الاشتراك (SaaS):</label>
+                        <select
+                          value={devSystemPlan}
+                          onChange={(e: any) => setDevSystemPlan(e.target.value)}
+                          className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-white cursor-pointer focus:outline-none"
                         >
-                          {staff.permissions.viewRecharges ? <ToggleRight className="w-7 h-7 text-emerald-400" /> : <ToggleLeft className="w-7 h-7 text-slate-650 text-slate-600" />}
-                        </button>
+                          <option value="STARTER">بدء تجريبي (Starter)</option>
+                          <option value="PRO">فئة متوسطة (Pro)</option>
+                          <option value="ENTERPRISE">مؤسسات كبرى (Enterprise)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Feature Modules Toggles Area */}
+                    <div className="space-y-2 align-right text-right">
+                      <label className="text-[10px] text-slate-400 font-bold block">الوحدات البرمجية لتفعيلها تلقائياً (Modules):</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: 'Commerce', label: 'المتجر الإلكتروني', desc: 'Commerce' },
+                          { id: 'AI', label: 'المساعد الذكي', desc: 'AI assistant' },
+                          { id: 'Analytics', label: 'رسم بياني مالي', desc: 'Charts/BI' }
+                        ].map(mod => {
+                          const isActive = devSelectedModules.includes(mod.id);
+                          return (
+                            <button
+                              type="button"
+                              key={mod.id}
+                              onClick={() => {
+                                if (isActive) {
+                                  setDevSelectedModules(p => p.filter(x => x !== mod.id));
+                                } else {
+                                  setDevSelectedModules(p => [...p, mod.id]);
+                                }
+                              }}
+                              className={`p-2 rounded-xl text-center border text-[10px] font-bold flex flex-col items-center justify-center gap-1 cursor-pointer transition ${
+                                isActive 
+                                  ? 'bg-cyan-950/40 border-cyan-500/50 text-cyan-300' 
+                                  : 'bg-slate-950 border-slate-850 text-slate-400 hover:border-slate-750'
+                              }`}
+                            >
+                              <span>{mod.label}</span>
+                              <span className="text-[8px] font-mono opacity-50 block">{mod.desc}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Submit generate button */}
+                    <button
+                      type="submit"
+                      disabled={isGeneratingSystem}
+                      className="px-5 py-3 w-full bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-450 hover:to-yellow-450 text-slate-950 text-xs font-black rounded-xl hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      {isGeneratingSystem ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                          <span>جاري تأسيس عوازل قاعدة البيانات...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Cpu className="w-4 h-4 text-slate-950" />
+                          <span>توليد النظام وتأسيس هياكل الجداول 🚀</span>
+                        </>
+                      )}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Simulated Console Log Panel */}
+                <div className="bg-slate-950 border border-slate-850 rounded-3xl p-4 flex flex-col flex-1 min-h-[220px]">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-900 mb-3 text-xs text-slate-400">
+                    <span className="flex items-center gap-1.5 font-mono">
+                      <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>سجل بناء وتكوين المنصة الرقمية</span>
+                    </span>
+                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                  </div>
+
+                  <div className="font-mono text-[10px] text-emerald-400/90 leading-normal flex-1 overflow-y-auto space-y-2 max-h-[260px] text-right scrollbar-thin" dir="ltr">
+                    {devTerminalLogs.length === 0 ? (
+                      <span className="text-slate-500 italic block text-center pt-10">
+                        [بانتظار أمر التوليد لتشغيل خادم المزامنة التلقائي...]
+                      </span>
+                    ) : (
+                      devTerminalLogs.map((log, i) => (
+                        <div 
+                          key={i} 
+                          className={`text-left border-l-2 pl-2 ${
+                            log.includes('[SUCCESS]') 
+                              ? 'border-yellow-500 text-yellow-400 font-bold' 
+                              : log.includes('[SECURITY]') 
+                                ? 'border-cyan-500 text-cyan-305' 
+                                : log.includes('[MODULE]') 
+                                ? 'border-fuchsia-550 text-fuchsia-300'
+                                : 'border-slate-800 text-slate-350'
+                          }`}
+                        >
+                          {log}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Right Column: Database ERD Relationships Schema (Inspired by Supabase Design) */}
+              <div className="lg:col-span-7 flex flex-col gap-6">
+                
+                {/* ERD Canvas Map */}
+                <div className="bg-slate-900 border border-slate-850 rounded-3xl p-5 shadow-xl flex flex-col">
+                  
+                  <div className="flex justify-between items-center pb-3 border-b border-slate-855 mb-4 pr-1">
+                    <div className="text-right">
+                      <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5 justify-end">
+                        <Database className="w-4 h-4 text-cyan-405" />
+                        <span>مخطط العلاقات وقاعدة البيانات الهيكلية لـ Supabase (ERD Map)</span>
+                      </h3>
+                      <p className="text-[10px] text-slate-500 mt-0.5">انقر على أي جدول لعرض الأعمدة وسياسات الحماية RLS والأوزان البرمجية له:</p>
+                    </div>
+                  </div>
+
+                  {/* Schema map columns block */}
+                  <div className="grid grid-cols-2 gap-4 relative py-2" dir="ltr">
+                    
+                    {/* Left Side: SaaS & Core Admins tables */}
+                    <div className="space-y-3.5">
+                      <div className="text-[9px] font-mono text-slate-500 font-extrabold tracking-widest uppercase mb-1">
+                        SAAS & CORE LAYER
                       </div>
 
-                      {/* Edit inventory */}
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400">{language === 'AR' ? 'تعديل السلع والمخزون:' : 'Edit Stock and Prices:'}</span>
-                        <button
-                          onClick={() => handleTogglePermission(staff.id, 'editInventory', !staff.permissions.editInventory)}
-                          className="cursor-pointer"
-                        >
-                          {staff.permissions.editInventory ? <ToggleRight className="w-7 h-7 text-emerald-400" /> : <ToggleLeft className="w-7 h-7 text-slate-650 text-slate-600" />}
-                        </button>
+                      {/* Organizations Table Card */}
+                      <div 
+                        onClick={() => setSelectedSchemaTable('organizations')}
+                        className={`p-3 rounded-xl border cursor-pointer text-left transition-all ${
+                          selectedSchemaTable === 'organizations'
+                            ? 'bg-[#0f1d3a] border-cyan-500/70 shadow-md'
+                            : 'bg-slate-950 border-slate-850 hover:bg-[#060c17]/50 hover:border-slate-755'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 justify-between">
+                          <span className="text-[11px] font-mono font-black text-white flex items-center gap-1">
+                            <span className="text-cyan-400">⚡</span> organizations
+                          </span>
+                          <span className="text-[8px] bg-cyan-500/10 text-cyan-400 px-1 py-0.5 rounded font-mono uppercase font-black">
+                            pk
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-slate-450 mt-1 font-sans text-right" dir="rtl">
+                          المؤسسات المسجلة المستقلة
+                        </p>
                       </div>
 
-                      {/* Manage Staff staff */}
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400">{language === 'AR' ? 'إدارة الموظفين والامتيازات:' : 'Manage Privileges:'}</span>
-                        <button
-                          onClick={() => handleTogglePermission(staff.id, 'manageStaff', !staff.permissions.manageStaff)}
-                          className="cursor-pointer"
-                        >
-                          {staff.permissions.manageStaff ? <ToggleRight className="w-7 h-7 text-emerald-400" /> : <ToggleLeft className="w-7 h-7 text-slate-650 text-slate-600" />}
-                        </button>
+                      {/* Branches Table Card */}
+                      <div 
+                        onClick={() => setSelectedSchemaTable('branches')}
+                        className={`p-3 rounded-xl border cursor-pointer text-left transition-all ${
+                          selectedSchemaTable === 'branches'
+                            ? 'bg-[#0f1d3a] border-cyan-500/70 shadow-md'
+                            : 'bg-slate-950 border-slate-850 hover:bg-[#060c17]/50 hover:border-slate-755'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 justify-between">
+                          <span className="text-[11px] font-mono font-black text-white flex items-center gap-1">
+                            <span className="text-emerald-400">📍</span> branches
+                          </span>
+                          <span className="text-[8px] bg-amber-500/10 text-amber-450 px-1 py-0.5 rounded font-mono uppercase font-black">
+                            fk_org
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-slate-450 mt-1 font-sans text-right" dir="rtl">
+                          فروع ومحلات المؤسسة المعزولة
+                        </p>
+                      </div>
+
+                      {/* Audit Logs Table Card */}
+                      <div 
+                        onClick={() => setSelectedSchemaTable('audit_log')}
+                        className={`p-3 rounded-xl border cursor-pointer text-left transition-all ${
+                          selectedSchemaTable === 'audit_log'
+                            ? 'bg-[#0f1d3a] border-cyan-500/70 shadow-md'
+                            : 'bg-slate-950 border-slate-850 hover:bg-[#060c17]/50 hover:border-slate-755'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 justify-between">
+                          <span className="text-[11px] font-mono font-black text-white flex items-center gap-1">
+                            <span className="text-emerald-450">📑</span> audit_log
+                          </span>
+                          <span className="text-[8px] bg-slate-800 text-slate-300 px-1 py-0.5 border border-slate-700/50 rounded font-mono uppercase">
+                            trail
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-slate-450 mt-1 font-sans text-right" dir="rtl">
+                          سجلات التدقيق العام وعمليات المطورين
+                        </p>
+                      </div>
+
+                    </div>
+
+                    {/* Right Side: Operational Tables with RLS */}
+                    <div className="space-y-3.5">
+                      <div className="text-[9px] font-mono text-slate-500 font-extrabold tracking-widest uppercase mb-1">
+                        OPERATIONAL & BUSINESS LAYER
+                      </div>
+
+                      {/* Products Table Card */}
+                      <div 
+                        onClick={() => setSelectedSchemaTable('products')}
+                        className={`p-3 rounded-xl border cursor-pointer text-left transition-all ${
+                          selectedSchemaTable === 'products'
+                            ? 'bg-[#0f1d3a] border-amber-500/60 shadow-md'
+                            : 'bg-slate-950 border-slate-850 hover:bg-[#060c17]/50 hover:border-slate-755'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 justify-between">
+                          <span className="text-[11px] font-mono font-black text-white flex items-center gap-1">
+                            <span className="text-amber-400">📦</span> products
+                          </span>
+                          <span className="text-[8px] bg-cyan-500/10 text-cyan-450 px-1 py-0.5 rounded font-mono uppercase font-black">
+                            rls on
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-slate-450 mt-1 font-sans text-right" dir="rtl">
+                          السلع والمنتجات المعزولة لـ Org-ID
+                        </p>
+                      </div>
+
+                      {/* Orders Table Card */}
+                      <div 
+                        onClick={() => setSelectedSchemaTable('orders')}
+                        className={`p-3 rounded-xl border cursor-pointer text-left transition-all ${
+                          selectedSchemaTable === 'orders'
+                            ? 'bg-[#0f1d3a] border-amber-500/60 shadow-md'
+                            : 'bg-slate-950 border-slate-850 hover:bg-[#060c17]/50 hover:border-slate-755'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 justify-between">
+                          <span className="text-[11px] font-mono font-black text-white flex items-center gap-1">
+                            <span className="text-amber-400">🛒</span> orders
+                          </span>
+                          <span className="text-[8px] bg-cyan-500/10 text-cyan-450 px-1 py-0.5 rounded font-mono uppercase font-black">
+                            rls on
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-slate-450 mt-1 font-sans text-right" dir="rtl">
+                          صفقات زبائن الفرع الفوري والمحاسب
+                        </p>
+                      </div>
+
+                      {/* Debts Table Card */}
+                      <div 
+                        onClick={() => setSelectedSchemaTable('debts')}
+                        className={`p-3 rounded-xl border cursor-pointer text-left transition-all ${
+                          selectedSchemaTable === 'debts'
+                            ? 'bg-[#0f1d3a] border-amber-500/60 shadow-md'
+                            : 'bg-slate-950 border-slate-850 hover:bg-[#060c17]/50 hover:border-slate-755'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 justify-between">
+                          <span className="text-[11px] font-mono font-black text-white flex items-center gap-1">
+                            <span className="text-red-400">🤝</span> debts
+                          </span>
+                          <span className="text-[8px] bg-red-500/10 text-red-400 px-1 py-0.5 rounded font-mono uppercase">
+                            sec level
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-slate-450 mt-1 font-sans text-right" dir="rtl">
+                          حسابات الديون والمثاقل المالية المعزولة
+                        </p>
                       </div>
 
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
-        {/* 5️⃣ CLIENTS DEBTS TAB CONTENT */}
-        {activeTab === 'DEBTS' && (isAdmin || pCheck.viewSales) && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fadeIn">
-            
-            {/* Registered clients ledgers */}
-            <div className="lg:col-span-8 bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl space-y-4">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">{language === 'AR' ? 'دفتر الديون النشطة والذمم المفتوحة للمتجر' : 'Outstanding Client Accounts Ledger'}</h3>
-              
-              <div className="overflow-x-auto relative rounded-2xl border border-slate-850 bg-slate-950 whitespace-nowrap">
-                <table className="w-full text-right md:text-left text-xs text-slate-300">
-                  <thead className="bg-slate-900 text-[10px] text-slate-450 uppercase font-mono border-b border-slate-850">
-                    <tr>
-                      <th className="px-4 py-3">{language === 'AR' ? 'اسم العميل' : 'Debtor Details'}</th>
-                      <th className="px-4 py-3 text-center">{language === 'AR' ? 'رقم الهاتف' : 'Phone'}</th>
-                      <th className="px-4 py-3 text-center">{language === 'AR' ? 'المبلغ المتبقي YER' : 'Total Debt (YER)'}</th>
-                      <th className="px-4 py-3 text-center">{language === 'AR' ? 'ملاحظة الذمة' : 'Notes'}</th>
-                      <th className="px-4 py-3 text-center">{language === 'AR' ? 'تسوية وتصفية' : 'Settle'}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-850">
-                    {debts.filter(d => d.totalDebtYER > 0).map((debt) => (
-                      <tr key={debt.id} className="hover:bg-slate-900/30">
-                        <td className="px-4 py-3.5 font-bold text-white">{debt.customerName}</td>
-                        <td className="px-4 py-3.5 text-center font-mono text-slate-400">{debt.customerPhone || 'دون هاتف'}</td>
-                        <td className="px-4 py-3.5 text-center font-mono font-black text-rose-400">{debt.totalDebtYER.toLocaleString()} YER</td>
-                        <td className="px-4 py-3.5 text-center text-slate-400 max-w-xs truncate">{debt.notes || '—'}</td>
-                        <td className="px-4 py-3.5 text-center">
-                          <button
-                            onClick={() => handleClearDebt(debt.id)}
-                            className="px-3 py-1.5 bg-emerald-950 border border-emerald-800/80 text-emerald-400 hover:border-emerald-500 rounded-lg text-[11px] font-black cursor-pointer mx-auto"
-                          >
-                            تصفية الحساب
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {debts.filter(d => d.totalDebtYER > 0).length === 0 && (
-                      <tr>
-                        <td colSpan={5} className="text-center py-8 text-slate-500 text-xs">
-                          {language === 'AR' ? 'لا توجود أي ديون نشطة بالدفتر حالياً.' : 'No active debts detected in memory database! Excellent credit.'}
-                        </td>
-                      </tr>
+                  {/* Schema Inspector Side Drawer */}
+                  <div className="mt-4 bg-slate-950 border border-slate-850 rounded-2xl p-4.5 space-y-3" dir="rtl">
+                    <div className="flex justify-between items-center border-b border-slate-900 pb-2">
+                      <span className="text-xs font-black text-cyan-400 font-mono tracking-wider flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                        <span>تفاصيل كيان الجدول:</span>
+                        <span className="text-white font-black bg-slate-900 px-2 py-0.5 border border-slate-800 rounded font-mono">{selectedSchemaTable}</span>
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                      
+                      {/* Left: Attributes column definitions */}
+                      <div className="space-y-1.5 text-right w-full">
+                        <span className="text-[10px] text-slate-500 block uppercase tracking-wider font-extrabold">هيكل بيانات الأعمدة (Table Attributes):</span>
+                        <div className="bg-slate-900/50 border border-slate-900 rounded-xl p-2 font-mono text-[10px] text-slate-350 space-y-1 text-left" dir="ltr">
+                          {selectedSchemaTable === 'organizations' && (
+                            <>
+                              <div><span className="text-amber-500">id</span> UUID [PRIMARY_KEY]</div>
+                              <div><span className="text-cyan-400">name</span> text NOT NULL</div>
+                              <div><span className="text-cyan-400">industry</span> text [RETAIL / HEALTHCARE...]</div>
+                              <div><span className="text-cyan-400">plan</span> text [STARTER / PRO / ENT]</div>
+                              <div><span className="text-cyan-400">subdomain</span> text UNIQUE</div>
+                              <div><span className="text-cyan-400">status</span> text ACTIVE/INACTIVE</div>
+                            </>
+                          )}
+                          {selectedSchemaTable === 'branches' && (
+                            <>
+                              <div><span className="text-amber-500">id</span> UUID [PRIMARY_KEY]</div>
+                              <div><span className="text-fuchsia-400">org_id</span> UUID [FOREIGN_KEY -&gt; organizations.id]</div>
+                              <div><span className="text-cyan-400">name</span> text NOT NULL</div>
+                              <div><span className="text-cyan-400">location</span> text</div>
+                              <div><span className="text-cyan-400">manager_id</span> text</div>
+                              <div><span className="text-cyan-400">status</span> text ACTIVE</div>
+                            </>
+                          )}
+                          {selectedSchemaTable === 'products' && (
+                            <>
+                              <div><span className="text-amber-500">id</span> text UNIQUE [PRIMARY_KEY]</div>
+                              <div><span className="text-fuchsia-400">org_id</span> UUID [FOREIGN_KEY]</div>
+                              <div><span className="text-cyan-400">name_ar</span> text NOT NULL</div>
+                              <div><span className="text-cyan-400">price_yer</span> numeric NOT NULL</div>
+                              <div><span className="text-cyan-400">stock</span> integer DEFAULT 0</div>
+                              <div><span className="text-cyan-400">is_available</span> boolean DEFAULT true</div>
+                            </>
+                          )}
+                          {selectedSchemaTable === 'orders' && (
+                            <>
+                              <div><span className="text-amber-500">id</span> text [PRIMARY_KEY]</div>
+                              <div><span className="text-fuchsia-400">org_id</span> UUID [FOREIGN_KEY]</div>
+                              <div><span className="text-cyan-400">total_yer</span> numeric DEFAULT 0</div>
+                              <div><span className="text-cyan-400">status</span> text STATUS_PENDING</div>
+                              <div><span className="text-cyan-400">payment_method</span> text</div>
+                              <div><span className="text-cyan-400">created_at</span> timestamp</div>
+                            </>
+                          )}
+                          {selectedSchemaTable === 'debts' && (
+                            <>
+                              <div><span className="text-amber-500">id</span> UUID [PRIMARY_KEY]</div>
+                              <div><span className="text-fuchsia-400">org_id</span> UUID [FOREIGN_KEY]</div>
+                              <div><span className="text-cyan-400">customer_name</span> text NOT NULL</div>
+                              <div><span className="text-cyan-400">customer_phone</span> text</div>
+                              <div><span className="text-cyan-400">total_debt_yer</span> numeric DEFAULT 0</div>
+                              <div><span className="text-cyan-405">notes</span> text</div>
+                            </>
+                          )}
+                          {selectedSchemaTable === 'audit_log' && (
+                            <>
+                              <div><span className="text-amber-500">id</span> UUID [PRIMARY_KEY]</div>
+                              <div><span className="text-cyan-400">org_id</span> UUID [FOREIGN_KEY]</div>
+                              <div><span className="text-cyan-400">action</span> text NOT NULL</div>
+                              <div><span className="text-cyan-450">operator</span> text [e.g. system_cron]</div>
+                              <div><span className="text-cyan-400">payload</span> jsonb NOT NULL</div>
+                              <div><span className="text-cyan-400">created_at</span> timestamp DEFAULT now()</div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right: Security & RLS Policy Detail */}
+                      <div className="space-y-1.5 text-right w-full">
+                        <span className="text-[10px] text-slate-500 block uppercase tracking-wider font-extrabold">حالة وسياسة عزل البيانات للفرع (Postgres RLS):</span>
+                        <div className="bg-slate-900 border border-slate-850 p-3 rounded-xl text-slate-300 leading-relaxed text-[11px] space-y-1.5">
+                          <div className="flex justify-between items-center font-mono">
+                            <span className="text-[10px] text-slate-500">RLS Enforcement</span>
+                            <span className="text-emerald-450 font-bold font-sans">🟢 نشطة ومحمية</span>
+                          </div>
+                          
+                          <p className="text-[10px] text-slate-400 leading-normal font-sans">
+                            {selectedSchemaTable === 'organizations' && 'كل مؤسسة أو زبون يتم تحديد هويته عند تسجيل الدخول ليسمح له Postgres بقراءة وتعديل صفوفه الخاصة فقط.'}
+                            {selectedSchemaTable === 'branches' && 'يرتبط الفرع بمعرف المؤسسة الأم org_id. لا يمكن لأي مستخدم من مؤسسة أخرى جلب أو فحص الفروع الخاصة بك.'}
+                            {selectedSchemaTable === 'products' && 'يتيح RLS جرد السلع وإدارتها بشكل معزول كلياً، بحيث يقتصر الجرد والتحديث على الإدارة المصرح لها داخل متجرها فقط.'}
+                            {selectedSchemaTable === 'orders' && 'يحول دون كشف صفقات ومبيعات تابعة لمؤسسة تجارية منافسة أو فروع تابعة لمنطقة جغرافية معزولة.'}
+                            {selectedSchemaTable === 'debts' && 'الحماية الأشد أهمية! تضمن عدم حدوث الخلل أو تداخل مديونيات الزبائن آجل بين الدفاتر عند الاستعلام عبر نفس الخادم.'}
+                            {selectedSchemaTable === 'audit_log' && 'سجل مركزي مشفر ومحمي يوثق توليد المواقع وتغيير صلاحيات الموظفين، للاستقصاء الجنائي والترويجي لاحقًا.'}
+                          </p>
+
+                          <div className="pt-1.5 border-t border-slate-900 text-slate-500 text-[10px]">
+                            Tenant Separator Column: <span className="font-mono text-cyan-405 font-bold">org_id</span>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Secure PL/pgSQL Code Builder for Supabase Platform */}
+                <div className="bg-slate-900 border border-slate-850 rounded-3xl p-5 shadow-xl space-y-4">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-855">
+                    <span className="text-xs font-black text-white uppercase tracking-wider block text-right font-sans">
+                      سياسات الحماية وقالب الرابط اللحظي للـ Supabase RLS Policy:
+                    </span>
+                    <button
+                      onClick={() => {
+                        setCopiedPolicyText(true);
+                        setTimeout(() => setCopiedPolicyText(false), 2000);
+                        
+                        let codeToCopy = '';
+                        if (selectedSchemaTable === 'organizations') {
+                          codeToCopy = `ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY org_isolation ON organizations\n  FOR ALL TO authenticated\n  USING (id = (auth.jwt() ->> 'org_id')::uuid);`;
+                        } else {
+                          codeToCopy = `ALTER TABLE ${selectedSchemaTable} ENABLE ROW LEVEL SECURITY;\n\nCREATE POLICY ${selectedSchemaTable}_isolation ON ${selectedSchemaTable}\n  FOR ALL TO authenticated\n  USING (org_id = (auth.jwt() ->> 'org_id')::uuid);`;
+                        }
+                        navigator.clipboard.writeText(codeToCopy);
+                      }}
+                      className="px-3 py-1 bg-slate-950 hover:bg-slate-850 text-[10px] text-amber-500 font-bold rounded-lg border border-slate-800 cursor-pointer transition-colors"
+                    >
+                      {copiedPolicyText ? '✓ تم النسخ' : '📋 نسخ الكود'}
+                    </button>
+                  </div>
+
+                  <div className="font-mono text-[10px] text-cyan-305 bg-slate-950 p-4 rounded-xl border border-slate-850 text-left overflow-x-auto whitespace-pre leading-relaxed" dir="ltr">
+                    {selectedSchemaTable === 'organizations' ? (
+                      <>
+                        <span className="text-slate-500">-- 1. تفعيل حوكمة السياسات على الجدول</span>{'\n'}
+                        <span className="text-amber-500">ALTER TABLE</span> organizations <span className="text-amber-500">ENABLE ROW LEVEL SECURITY</span>;{'\n\n'}
+                        <span className="text-slate-500">-- 2. صياغة قانون العزل والتوجيه اللحظي لبيانات المؤسسة</span>{'\n'}
+                        <span className="text-amber-500">CREATE POLICY</span> tenant_isolation_rule <span className="text-amber-500">ON</span> organizations{'\n'}
+                        {'  '}<span className="text-amber-500">FOR ALL</span>{'\n'}
+                        {'  '}<span className="text-amber-500">TO</span> authenticated{'\n'}
+                        {'  '}<span className="text-amber-500">USING</span> (id = (auth.jwt() -&gt;&gt; <span className="text-emerald-450">'org_id'</span>)::uuid){'\n'}
+                        {'  '}<span className="text-amber-500">WITH CHECK</span> (id = (auth.jwt() -&gt;&gt; <span className="text-emerald-450">'org_id'</span>)::uuid);
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-slate-500">-- 1. تفعيل حوكمة السياسات على الجدول</span>{'\n'}
+                        <span className="text-amber-500">ALTER TABLE</span> {selectedSchemaTable} <span className="text-amber-500">ENABLE ROW LEVEL SECURITY</span>;{'\n\n'}
+                        <span className="text-slate-500">-- 2. صياغة السياسة التي تفصل جدول "{selectedSchemaTable}" تلقائياً حسب هوية المستخدم</span>{'\n'}
+                        <span className="text-amber-500">CREATE POLICY</span> {selectedSchemaTable}_isolation_rule <span className="text-amber-500">ON</span> {selectedSchemaTable}{'\n'}
+                        {'  '}<span className="text-amber-500">FOR ALL</span>{'\n'}
+                        {'  '}<span className="text-amber-500">TO</span> authenticated{'\n'}
+                        {'  '}<span className="text-amber-500">USING</span> (org_id = (auth.jwt() -&gt;&gt; <span className="text-emerald-450">'org_id'</span>)::uuid){'\n'}
+                        {'  '}<span className="text-amber-500">WITH CHECK</span> (org_id = (auth.jwt() -&gt;&gt; <span className="text-emerald-450">'org_id'</span>)::uuid);
+                      </>
                     )}
-                  </tbody>
-                </table>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* Sub-Panel: Directory of dynamically spawned systems */}
+            <div className="bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl space-y-4">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-855" dir="rtl">
+                <div className="text-right">
+                  <h3 className="text-xs font-black text-white uppercase tracking-wider">
+                    المواقع والتطبيقات النشطة التي تم توليدها بالكامل من المنصة (Generated Run-times)
+                  </h3>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    الأنظمة التالية تم تخصيص نطاقاتها وربطها سحابياً بجداول Supabase ومكتملة الرخص بضغطة زر:
+                  </p>
+                </div>
+                <span className="px-3 py-1 bg-slate-950 border border-slate-800 text-[10px] text-amber-450 rounded-lg font-mono font-black">
+                  {generatedSystems.length} Generated Sites
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" dir="rtl">
+                {generatedSystems.map((sys) => (
+                  <div key={sys.id} className="bg-slate-950 border border-slate-855 hover:border-slate-800 rounded-2xl p-4 flex flex-col justify-between gap-3 group transition-all">
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-850 flex items-center justify-center text-sm">
+                          {sys.industry === 'HEALTHCARE' ? '🏥' : sys.industry === 'LEGAL' ? '⚖️' : sys.industry === 'AI_OPERATIONS' ? '🤖' : '🏢'}
+                        </div>
+                        <div className="text-right">
+                          <h4 className="text-xs font-bold text-white group-hover:text-amber-400 transition-colors">
+                            {sys.name}
+                          </h4>
+                          <span className="text-[8px] font-mono text-slate-550 uppercase tracking-widest block">{sys.id} / {sys.industry}</span>
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono">
+                        {sys.plan}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 mt-1">
+                      {/* URL route */}
+                      <div className="flex justify-between items-center text-[10px] bg-slate-900/60 p-2 rounded-xl text-slate-400" dir="ltr">
+                        <span className="text-cyan-405 font-mono font-bold">https://{sys.domain}</span>
+                        <span className="text-[8px] bg-slate-950 px-1.5 py-0.5 rounded font-bold font-sans text-right" dir="rtl">رابط المطور الفوري</span>
+                      </div>
+                      
+                      {/* System Owner */}
+                      <div className="flex justify-between items-center text-[10px] text-slate-450">
+                        <span>{sys.owner}</span>
+                        <span className="text-slate-550">العميل المستفيد:</span>
+                      </div>
+                      
+                      {/* Connected Modules */}
+                      <div className="flex items-center gap-1.5 pt-1.5 border-t border-slate-900">
+                        <span className="text-[9px] text-slate-550 shrink-0">الوحدات:</span>
+                        <div className="flex flex-wrap gap-1">
+                          {sys.modules.map((m: string) => (
+                            <span key={m} className="px-1.5 py-0.5 bg-slate-900 text-[8px] text-slate-400 border border-slate-800 rounded font-semibold progress-bar uppercase font-mono">
+                              {m}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Simulation Launch system */}
+                    <button
+                      onClick={() => alert(language === 'AR' ? `🚀 جاري فحص الرابط الفرعي وتوجيه الحزم... تم تفعيل RLS بنجاح للنظام المولد: ${sys.name}` : `Launching secure pipeline for ${sys.name}...`)}
+                      className="mt-1.5 py-2 w-full bg-slate-900 hover:bg-cyan-500 hover:text-slate-950 text-cyan-400 text-[10px] font-black rounded-lg border border-slate-800 hover:border-cyan-500 text-center cursor-pointer transition-all flex items-center justify-center gap-1.5 spin-indicator"
+                    >
+                      <Link className="w-3.5 h-3.5" />
+                      <span>{language === 'AR' ? 'تشغيل واختبار الرابط المولد' : 'Test Sandbox Instance'}</span>
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Register new debt record */}
-            <div className="lg:col-span-4 bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-xl h-fit">
-              <h3 className="text-sm font-bold text-white mb-1 uppercase tracking-wider">{language === 'AR' ? 'تسجيل دين آجل جديد' : 'Open Custom Client Account'}</h3>
-              <p className="text-xs text-slate-500 mb-4">{language === 'AR' ? 'يرجى تسجيل ديون الشحن والمنتجات آجل باسم وصحيفة العميل بدقة.' : 'Create a debt entry in YER to track accounts receivable.'}</p>
-              
-              <form onSubmit={handleCreateDebt} className="space-y-3.5">
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase">{language === 'AR' ? 'اسم العميل ثلاثي:' : 'Debtor Full Name:'}</label>
-                  <input
-                    type="text"
-                    required
-                    value={newDebtName}
-                    onChange={(e) => setNewDebtName(e.target.value)}
-                    placeholder="e.g. ناصر اليافعي"
-                    className="bg-slate-950 text-xs py-2 px-3.5 rounded-xl border border-slate-800 text-white"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase">{language === 'AR' ? 'رقم الهاتف المعين:' : 'Telephone Link:'}</label>
-                  <input
-                    type="tel"
-                    value={newDebtPhone}
-                    onChange={(e) => setNewDebtPhone(e.target.value)}
-                    placeholder="77xxxxxxx"
-                    className="bg-slate-950 text-xs py-2 px-3.5 rounded-xl border border-slate-800 text-white font-mono"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase">{language === 'AR' ? 'المبلغ المستحق (ريال يمني YER):' : 'Debt Value (YER):'}</label>
-                  <input
-                    type="number"
-                    required
-                    value={newDebtAmount || ''}
-                    onChange={(e) => setNewDebtAmount(Number(e.target.value))}
-                    placeholder="YER..."
-                    className="bg-slate-950 text-xs py-2 px-3.5 rounded-xl border border-slate-800 text-white font-mono"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase">{language === 'AR' ? 'بيان المديونية وتفاصيل التزويد:' : 'Ledger Allocation Notes:'}</label>
-                  <textarea
-                    value={newDebtNotes}
-                    onChange={(e) => setNewDebtNotes(e.target.value)}
-                    placeholder="e.g. باقة مزايا يمن موبايل وشاحن انكر"
-                    className="bg-slate-950 text-xs py-2 px-3.5 rounded-xl border border-slate-800 text-white h-16 resize-none focus:outline-none"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-900 font-black text-xs rounded-xl shadow transition-all cursor-pointer"
-                >
-                  {language === 'AR' ? 'توثيق الدين بالدفتر' : 'Register Receivable'}
-                </button>
-              </form>
-            </div>
-
-          </div>
-        )}
-
-        {/* 6️⃣ CLIENT ORDERS TAB CONTENT */}
-        {activeTab === 'ORDERS' && (
-          <div className="bg-slate-900 border border-slate-855 rounded-3xl p-6 shadow-xl animate-fadeIn space-y-4">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider">{language === 'AR' ? 'لوحة تزويد وإدارة طلبات الزبائن وتزويد الرصيد' : 'Active Digital Charge & Goods Shipping Terminal'}</h3>
-            
-            <div className="overflow-x-auto relative rounded-2xl border border-slate-850 bg-slate-955 whitespace-nowrap">
-              <table className="w-full text-right md:text-left text-xs text-slate-250">
-                <thead className="bg-slate-900 text-[10px] text-slate-450 uppercase font-mono border-b border-slate-850">
-                  <tr>
-                    <th className="px-4 py-3">{language === 'AR' ? 'رقم الطلب / الكود' : 'Order ID'}</th>
-                    <th className="px-4 py-3">{language === 'AR' ? 'الزبون والاتصال' : 'Buyer & Phone'}</th>
-                    <th className="px-4 py-3">{language === 'AR' ? 'السلع والخدمات المطلوبة' : 'Package / Details'}</th>
-                    <th className="px-4 py-3 text-center">{language === 'AR' ? 'الإجمالي' : 'Grand Total'}</th>
-                    <th className="px-4 py-3 text-center">{language === 'AR' ? 'التوقيت' : 'Time'}</th>
-                    <th className="px-4 py-3 text-center">{language === 'AR' ? 'حالة الطلب' : 'Status Dispatch'}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-850">
-                  {orders.map((order) => (
-                    <tr key={order.id} className="hover:bg-slate-900/35">
-                      <td className="px-4 py-4 font-mono font-black text-cyan-300">{order.id}</td>
-                      <td className="px-4 py-4">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-white">{order.customerName}</span>
-                          <span className="text-[10px] text-slate-500 font-mono">{order.customerPhone}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex flex-col gap-1 max-w-sm">
-                          {order.items.map((item, i) => (
-                            <div key={i} className="text-xs">
-                              <span className="font-medium text-slate-100">
-                                {language === 'AR' ? item.product.nameAR : item.product.nameEN} ({item.quantity}x)
-                              </span>
-                              {item.rechargeDetails && (
-                                <span className="block text-[10px] text-cyan-400 font-mono">
-                                  {item.rechargeDetails.phoneNumber ? `🌐 Carrier: ${item.rechargeDetails.phoneNumber}` : `🎮 Player ID: ${item.rechargeDetails.playerId}`}
-                                </span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 text-center font-mono font-black text-emerald-400">
-                        {order.totalYER.toLocaleString()} YER
-                      </td>
-                      <td className="px-4 py-4 text-center text-[10px] text-slate-500 font-mono">
-                        {new Date(order.createdAt).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-4 text-center">
-                        <select
-                          value={order.status}
-                          onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value)}
-                          className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black tracking-wide border bg-slate-900 focus:outline-none cursor-pointer ${
-                            order.status === 'COMPLETED' 
-                              ? 'border-emerald-700 text-emerald-450 text-emerald-400' 
-                              : order.status === 'PROCESSING' 
-                                ? 'border-cyan-705 text-cyan-454 text-cyan-400 animate-pulse' 
-                                : order.status === 'PENDING'
-                                  ? 'border-amber-700 text-amber-400'
-                                  : 'border-red-800 text-red-400'
-                          }`}
-                        >
-                          <option value="PENDING">{language === 'AR' ? 'قيد المراجعة' : 'Pending'}</option>
-                          <option value="PROCESSING">{language === 'AR' ? 'جاري الشحن/التوصيل' : 'Processing'}</option>
-                          <option value="COMPLETED">{language === 'AR' ? 'مكتمل ومسدد' : 'Completed'}</option>
-                          <option value="CANCELLED">{language === 'AR' ? 'ملغي' : 'Cancelled'}</option>
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </div>
         )}
 

@@ -271,6 +271,7 @@ export default function App() {
           storeNameAR={config.shopNameAR}
           storeNameEN={config.shopNameEN}
           logoEmoji={config.logoEmoji}
+          logoImageUrl={config.logoImageUrl}
           exchangeUSD={config.exchangeRateUSD}
         />
       ) : (

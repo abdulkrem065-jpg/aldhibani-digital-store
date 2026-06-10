@@ -6,7 +6,35 @@
 export type Language = 'AR' | 'EN';
 export type Currency = 'YER' | 'USD' | 'SAR';
 
-export type UserRole = 'ADMIN' | 'CASHIER' | 'COMMUNICATIONS' | 'STORE_MANAGER';
+export type UserRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'CASHIER' | 'SALES' | 'COMMUNICATIONS' | 'STORE_MANAGER';
+
+export interface Organization {
+  id: string;
+  name: string;
+  industry: 'RETAIL' | 'HEALTHCARE' | 'LEGAL' | 'SERVICES' | 'AI_OPERATIONS';
+  plan: 'STARTER' | 'PRO' | 'ENTERPRISE';
+  status: 'ACTIVE' | 'SUSPENDED';
+  logo: string;
+}
+
+export interface Branch {
+  id: string;
+  orgId: string;
+  name: string;
+  location: string;
+  managerId: string;
+  status: 'ACTIVE' | 'INACTIVE';
+}
+
+export interface InventoryTransaction {
+  id: string;
+  productId: string;
+  type: 'IN' | 'OUT' | 'ADJUST';
+  quantity: number;
+  reason: string;
+  createdAt: string;
+  operatorName: string;
+}
 
 export interface StaffPermissions {
   viewSales: boolean;
@@ -21,12 +49,15 @@ export interface StaffUser {
   password?: string; // only stored securely or mocked in storage
   role: UserRole;
   permissions: StaffPermissions;
+  orgId?: string;
+  branchId?: string;
 }
 
 export interface StoreConfig {
   shopNameAR: string;
   shopNameEN: string;
   logoEmoji: string;
+  logoImageUrl?: string;
   tickerTextAR: string;
   tickerTextEN: string;
   exchangeRateUSD: number; // 1 USD = X YER (e.g., 530Y / 1500Y)

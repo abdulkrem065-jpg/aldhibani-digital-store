@@ -259,6 +259,34 @@ export class SupabaseServerlessDB {
     return list;
   }
 
+  static clearAllProducts(): void {
+    this.set('aldhibani_local_products', []);
+    if (supabase) {
+      supabase.from('aldhibani_products').delete().neq('id', 'keep-dummy').then(() => {});
+    }
+  }
+
+  static clearAllCategories(): void {
+    this.set('aldhibani_local_categories', []);
+    if (supabase) {
+      supabase.from('aldhibani_categories').delete().neq('id', 'keep-dummy').then(() => {});
+    }
+  }
+
+  static clearAllOrders(): void {
+    this.set('aldhibani_local_orders', []);
+    if (supabase) {
+      supabase.from('aldhibani_orders').delete().neq('id', 'keep-dummy').then(() => {});
+    }
+  }
+
+  static clearAllDebts(): void {
+    this.set('aldhibani_local_debts', []);
+    if (supabase) {
+      supabase.from('aldhibani_debts').delete().neq('id', 'keep-dummy').then(() => {});
+    }
+  }
+
   // --- ORDERS ---
   static getOrders(): Order[] {
     return this.get<Order[]>('aldhibani_local_orders', DEFAULT_ORDERS);
@@ -355,6 +383,17 @@ export class SupabaseServerlessDB {
     const idx = list.findIndex(s => s.id === staffId);
     if (idx !== -1) {
       list[idx].permissions = { ...list[idx].permissions, ...permissions };
+      this.set('aldhibani_local_staff', list);
+      this.asyncUpsert('staff_users', list[idx]);
+    }
+    return list;
+  }
+
+  static saveStaffPassword(staffId: string, newPasswordPlain: string): StaffUser[] {
+    const list = this.getStaff();
+    const idx = list.findIndex(s => s.id === staffId);
+    if (idx !== -1) {
+      list[idx].password = newPasswordPlain;
       this.set('aldhibani_local_staff', list);
       this.asyncUpsert('staff_users', list[idx]);
     }

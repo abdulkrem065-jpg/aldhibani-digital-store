@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, Shield, Bot, Languages, ArrowLeftRight, Mic, MicOff, Sparkles, 
-  HelpCircle, ClipboardList, CheckCircle2, Clock, Truck, Play, RefreshCw, X, LogOut, ShoppingCart 
+  HelpCircle, ClipboardList, CheckCircle2, Clock, Truck, Play, RefreshCw, X, LogOut, ShoppingCart, Share2 
 } from 'lucide-react';
 import { Language, Currency, StaffUser, StoreConfig, Order, Product } from '../types';
 
@@ -229,69 +229,76 @@ export default function Header({
     }
   };
 
+  const handleShareWhatsApp = () => {
+    if (!trackedOrder) return;
+    
+    const statusStr = getOrderStatusLabel(trackedOrder.status);
+    const itemsStr = trackedOrder.items.map(item => {
+      const prodName = language === 'AR' ? item.product.nameAR : item.product.nameEN;
+      return `- ${prodName} (${item.quantity}x)`;
+    }).join('\n');
+    
+    const currentUrl = window.location.origin;
+    const textMsg = language === 'AR' 
+      ? `📋 *حالة وتفاصيل طلبك*:\n\n*الرقم التسلسلي للطلب:* \`${trackedOrder.id}\`\n*حالة الطلب:* ${statusStr}\n*اسم العميل:* ${trackedOrder.customerName}\n\n*السلع المطلوبة:* \n${itemsStr}\n\n*الإجمالي:* ${trackedOrder.totalYER.toLocaleString()} YER\n\nويمكنك متابعة حالة الطلب فوريًا في أي وقت عبر هذا الرابط:\n${currentUrl}`
+      : `📋 *Order Tracking Status*:\n\n*Order Serial:* \`${trackedOrder.id}\`\n*Status:* ${statusStr}\n*Customer:* ${trackedOrder.customerName}\n\n*Items:* \n${itemsStr}\n\n*Total Amount:* ${trackedOrder.totalYER.toLocaleString()} YER\n\nTrack your order online in real-time here:\n${currentUrl}`;
+
+    const encoded = encodeURIComponent(textMsg);
+    window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
+  };
+
   return (
-    <header className="w-full bg-slate-900 border-b border-slate-800 z-40 sticky top-0 font-sans">
+    <header className="w-full bg-[#0a0f1d]/95 backdrop-blur-md border-b border-slate-800/80 z-40 sticky top-0 font-sans shadow-xl">
       
       {/* 1️⃣ MOVING ANNOUNCEMENTS BANNER (شريط الإعلانات المتحرك) */}
-      <div className="w-full bg-cyan-950 border-b border-cyan-800/50 py-1.5 px-4 overflow-hidden relative">
+      <div className="w-full bg-cyan-950/70 border-b border-cyan-800/20 py-1 px-4 overflow-hidden relative">
         <div className="flex whitespace-nowrap animate-marquee">
-          <span className="text-xs font-semibold text-cyan-300 md:text-sm tracking-wide gap-8 flex">
+          <span className="text-[10px] md:text-xs font-semibold text-cyan-300 tracking-wide gap-8 flex">
             <span>{language === 'AR' ? config.tickerTextAR : config.tickerTextEN}</span>
-            <span className="text-slate-505 select-none">•</span>
+            <span className="text-slate-500 select-none">•</span>
             <span>{language === 'AR' ? config.tickerTextAR : config.tickerTextEN}</span>
-            <span className="text-slate-505 select-none">•</span>
+            <span className="text-slate-500 select-none">•</span>
             <span>{language === 'AR' ? config.tickerTextAR : config.tickerTextEN}</span>
           </span>
         </div>
       </div>
 
-      {/* 2️⃣ MAIN HIGH END BRANDING AND OPERATIONS BAR IN AL-DHEEBANI VIP BRAND */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col lg:flex-row-reverse items-center justify-between gap-6" dir="rtl">
-        
-        {/* PREMIUM YELLOW LOGO CARD ON THE RIGHT (AS REQUESTED) */}
-        <div className="bg-[#facc15] text-slate-950 p-5 rounded-2xl flex flex-col justify-center text-center items-center shadow-2xl border border-yellow-300 w-full lg:w-[260px] shrink-0 select-none transition-all hover:scale-102">
-          <div className="text-[17px] font-black tracking-tight leading-none text-slate-950 font-sans">
-            {language === 'AR' ? 'مستودع ومتجر' : 'Warehouse & Store'}
-          </div>
-          <div className="text-[20px] font-extrabold tracking-widest text-[#9a1b1b] font-sans mt-0.5 leading-none uppercase drop-shadow-sm">
-            {language === 'AR' ? 'الذيباني VIP' : 'AL-DHEEBANI VIP'}
-          </div>
-          <div className="text-[10px] text-slate-900 border-t border-slate-950/15 pt-2 mt-2 leading-relaxed font-bold font-sans">
+      {/* 2️⃣ TOP UTILITY MINI-TIER (Language, Currency, Quick Admin details) */}
+      <div className="bg-slate-950/60 border-b border-slate-900/40 py-1.5 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row-reverse sm:items-center sm:justify-between gap-1 text-[10px] md:text-[11px]" dir="rtl">
+          {/* Right text info */}
+          <div className="text-slate-400 font-medium text-right sm:text-right hidden sm:block">
             {language === 'AR' 
-              ? 'خدمة شحن ألعاب فوري، توابل فاخرة، مواد تموينية وإلكترونيات بجودة معتمدة'
-              : 'Instant game recharges, premium spices, luxury groceries and certified hardware assets'}
+              ? '⚡ بوابة الذهيابي VIP: شحن ألعاب فوري، توابل فاخرة، وتموين بموثوقية فائقة'
+              : '⚡ Al-Dheebani VIP: Premium vouchers, pure honey & high-end spices'}
           </div>
-        </div>
 
-        {/* LEFT COLUMN SYSTEM CONTROLS AND NAVIGATION PILLS */}
-        <div className="flex-1 w-full flex flex-col gap-4 items-start lg:items-end text-right">
-          
-          {/* TOP ROW: CURRENCY SELECTORS & LANGUAGE DEALS (EXACTLY AS PICTURED) */}
-          <div className="flex flex-wrap gap-4 items-center justify-end w-full lg:w-auto">
-            
+          {/* Left selectors */}
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3">
             {/* Currency Selector */}
-            <div className="flex items-center gap-1.5 bg-slate-950/40 p-1.5 rounded-full border border-slate-800">
-              <span className="text-[10px] text-slate-400 font-bold px-2">{language === 'AR' ? 'تحديد العملة:' : 'Currency:'}</span>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-slate-500">{language === 'AR' ? 'العملة:' : 'Currency:'}</span>
               <button
                 type="button"
                 onClick={() => setCurrency('YER')}
-                className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
                   currency === 'YER'
-                    ? 'bg-amber-400 text-slate-950 border-amber-400 font-black'
-                    : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
+                    ? 'text-amber-400 font-black'
+                    : 'text-slate-400 hover:text-white'
                 }`}
                 id="currency-nav-yer-custom"
                 title="Yemeni Rial"
               >
                 <span>🇾🇪 {language === 'AR' ? 'يمني' : 'YER'}</span>
               </button>
+              <span className="text-slate-800">|</span>
               <button
                 type="button"
                 onClick={() => setCurrency('SAR')}
-                className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
                   currency === 'SAR'
-                    ? 'bg-amber-400 text-slate-950 border-amber-400 font-black'
-                    : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
+                    ? 'text-amber-400 font-black'
+                    : 'text-slate-400 hover:text-white'
                 }`}
                 id="currency-nav-sar-custom"
                 title="Saudi Riyal"
@@ -300,79 +307,141 @@ export default function Header({
               </button>
             </div>
 
+            <span className="text-slate-800 hidden sm:inline">|</span>
+
             {/* Language Selector */}
-            <div className="flex items-center gap-1.5 bg-slate-950/40 p-1.5 rounded-full border border-slate-800">
-              <span className="text-[10px] text-slate-400 font-bold px-2">{language === 'AR' ? 'اللغة:' : 'Language:'}</span>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-slate-500">{language === 'AR' ? 'اللغة:' : 'Lang:'}</span>
               <button
                 type="button"
                 onClick={() => setLanguage('AR')}
-                className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
                   language === 'AR'
-                    ? 'bg-amber-450 bg-amber-400 text-slate-950 border-amber-400 font-black'
-                    : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
+                    ? 'text-amber-400 font-black'
+                    : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <span>🇾🇪 {language === 'AR' ? 'عربي' : 'Arabic'}</span>
+                <span>عربي</span>
               </button>
+              <span className="text-slate-800">|</span>
               <button
                 type="button"
                 onClick={() => setLanguage('EN')}
-                className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
                   language === 'EN'
-                    ? 'bg-amber-450 bg-amber-400 text-slate-950 border-amber-400 font-black'
-                    : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
+                    ? 'text-amber-400 font-black'
+                    : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <span>🇬🇧 {language === 'AR' ? 'EN' : 'English'}</span>
+                <span>EN</span>
               </button>
             </div>
 
-            {/* Cart Trigger */}
-            <button
-              onClick={onOpenCart}
-              className="p-2 px-3 rounded-full border border-slate-800 bg-slate-950 hover:bg-slate-900 text-white transition-all flex items-center gap-2 relative cursor-pointer text-xs font-bold"
-              id="cart-trigger-nav"
-            >
-              <ShoppingCart className="w-4 h-4 text-amber-400" />
-              <span>{language === 'AR' ? 'السلة' : 'Basket'}</span>
-              {cartCount > 0 && (
-                <span className="w-5 h-5 rounded-full bg-red-500 text-[10px] font-sans font-black flex items-center justify-center border border-slate-900 shadow-md">
-                  {cartCount}
-                </span>
+            {/* Admin Toggle Panel Access if logged in */}
+            {user && (
+              <>
+                <span className="text-slate-800">|</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={onToggleAdminView}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-black transition-all flex items-center gap-1 ${
+                      isAdminView 
+                        ? 'bg-amber-500 text-slate-950 font-black' 
+                        : 'text-amber-400 hover:bg-slate-900 override:hover:text-amber-350'
+                    }`}
+                    id="btn-admin-view-toggle"
+                  >
+                    <Shield className="w-2.5 h-2.5" />
+                    <span>{isAdminView ? (language === 'AR' ? 'المعرض' : 'Showroom') : (language === 'AR' ? 'لوحة التحكم' : 'Admin Panel')}</span>
+                  </button>
+                  <button
+                    onClick={onLogout}
+                    className="p-1 rounded bg-red-955/20 border border-red-900/40 text-red-400 hover:bg-red-900 hover:text-white transition-all scale-90 cursor-pointer"
+                    title={language === 'AR' ? 'تسجيل الخروج' : 'Log Out'}
+                  >
+                    <LogOut className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 3️⃣ MAIN COMPACT NAVBAR (SLIM & STYLISH) */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 md:py-2.5 flex flex-col lg:flex-row-reverse items-center justify-between gap-2.5 lg:h-14" dir="rtl">
+        
+        {/* PREMIUM COMPACT BRAND LOGO */}
+        <div 
+          onClick={() => {
+            if (isAdminView && onToggleAdminView) {
+              onToggleAdminView();
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className="bg-[#facc15] text-[#0f172a] px-3 py-1 rounded-xl flex items-center justify-center gap-2 border border-yellow-400 shadow-sm transition-all active:scale-95 hover:brightness-105 select-none cursor-pointer w-full lg:w-auto shrink-0"
+        >
+          {config.logoImageUrl ? (
+            <img 
+              src={config.logoImageUrl} 
+              alt="Logo" 
+              className="w-7 h-7 object-contain rounded-lg shadow-md border border-amber-400/30" 
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="w-5.5 h-5.5 rounded bg-slate-950 text-amber-400 flex items-center justify-center text-[10px] font-black shadow-inner">
+              {config.logoEmoji || '👑'}
+            </div>
+          )}
+          <div className="flex flex-col text-right leading-none">
+            <span className="text-[8px] font-bold text-slate-900/60 leading-none">{language === 'AR' ? 'مستودع ومتجر' : 'Warehouse & Store'}</span>
+            <span className="text-xs md:text-sm font-black text-[#9a1b1b] tracking-wider uppercase leading-none mt-0.5">
+              {language === 'AR' ? config.shopNameAR : config.shopNameEN}
+            </span>
+          </div>
+        </div>
+
+        {/* COMPACT MIDDLE SEARCH BAR & CORE CONTROLS */}
+        <div className="flex-1 w-full flex flex-col md:flex-row-reverse md:items-center justify-between gap-2">
+          
+          {/* SEARCH FIELD WITH INTEGRATED MIC */}
+          <div className="w-full md:max-w-xs xl:max-w-md relative flex items-center gap-1" dir="ltr">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={language === 'AR' ? '🔍 ابحث هنا: باقة شحن، كود ألعاب، عسل...' : 'Search airtimes, games, honey...'}
+                className="w-full pl-7 pr-7 py-1 bg-slate-950/80 text-right border border-slate-850 rounded-lg text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-[#facc15] transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
               )}
+            </div>
+            
+            <button
+              onClick={toggleListening}
+              className={`p-1 rounded-lg border transition-all cursor-pointer flex items-center justify-center shrink-0 ${
+                isListening 
+                  ? 'bg-red-950 border-red-500 text-red-400 animate-pulse' 
+                  : 'bg-slate-950 border-slate-850 text-amber-500 hover:border-amber-400'
+              }`}
+              title={language === 'AR' ? 'البحث الصوتي' : 'Voice Search'}
+            >
+              {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
             </button>
-
-            {/* Admin Panel Access */}
-            {user ? (
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={onToggleAdminView}
-                  className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                    isAdminView 
-                      ? 'bg-amber-500 text-slate-900 hover:bg-amber-400' 
-                      : 'bg-slate-950 border border-slate-800 text-amber-400 hover:bg-slate-900'
-                  }`}
-                  id="btn-admin-view-toggle"
-                >
-                  <Shield className="w-3.5 h-3.5" />
-                  <span>{isAdminView ? (language === 'AR' ? 'المعرض والسلع' : 'Showroom') : (language === 'AR' ? 'لوحة التحكم' : 'Control Area')}</span>
-                </button>
-                <button
-                  onClick={onLogout}
-                  className="p-1.5 rounded-full bg-red-950/60 border border-red-800/80 hover:bg-red-900 text-red-300 transition-all cursor-pointer"
-                  title={language === 'AR' ? 'تسجيل الخروج' : 'Log Out'}
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ) : null}
-
           </div>
 
-          {/* LOWER ROW: HORIZONTAL ACTION ACTIVE BUTTON PILLS (EXACTLY AS PICTURED) */}
-          <div className="flex flex-wrap gap-3 items-center justify-start lg:justify-end w-full">
+          {/* COMPACT RECTANGULAR MENU NAVIGATION BUTTONS */}
+          <div className="flex items-center gap-1 overflow-x-auto justify-center md:justify-start w-full md:w-auto pb-0.5 md:pb-0 scrollbar-none">
             
-            {/* 1. المعرض والمعروضات  */}
+            {/* 1. المعرض والمعروضات */}
             <button
               type="button"
               onClick={() => {
@@ -382,17 +451,17 @@ export default function Header({
                 const el = document.getElementById('products-showroom-grid');
                 el?.scrollIntoView({ behavior: 'smooth' });
               }}
-              className={`px-5 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 cursor-pointer transition-all shadow-md select-none ${
+              className={`px-2 py-1 rounded-lg text-[10px] md:text-[11px] font-black flex items-center gap-1 cursor-pointer transition-all border ${
                 !isAdminView 
-                  ? 'bg-[#facc15] text-slate-950 font-black border border-[#facc15]' 
-                  : 'bg-slate-950 text-slate-300 border border-slate-850 hover:border-slate-700'
+                  ? 'bg-[#facc15] text-slate-950 border-amber-400 font-extrabold shadow-sm' 
+                  : 'bg-slate-950/60 text-slate-300 border-slate-800 hover:text-white'
               }`}
             >
               <span>🏠</span>
-              <span>{language === 'AR' ? 'المعرض والمعروضات' : 'Catalog & Exhibits'}</span>
+              <span>{language === 'AR' ? 'المعرض والسلع' : 'Catalog'}</span>
             </button>
 
-            {/* 2. المساعد الذكي AI */}
+            {/* 2. המساعد الذكي AI */}
             <button
               type="button"
               onClick={() => {
@@ -408,58 +477,37 @@ export default function Header({
                   ]);
                 }
               }}
-              className="px-5 py-2.5 rounded-2xl text-xs font-black bg-[#0d1425] hover:bg-slate-950 text-slate-100 border border-slate-800 hover:border-amber-400 cursor-pointer flex items-center gap-2 transition-all shadow-md"
+              className="px-2 py-1 rounded-lg text-[10px] md:text-[11px] font-black bg-slate-950/60 hover:bg-slate-900 text-slate-100 border border-slate-800 hover:border-amber-400 cursor-pointer flex items-center gap-1 transition-all"
             >
               <span>🤖</span>
-              <span>{language === 'AR' ? 'المساعد الذكي AI' : 'Smart AI Curator'}</span>
+              <span>{language === 'AR' ? 'المساعد' : 'AI Bot'}</span>
             </button>
 
             {/* 3. تتبع الطلبات */}
             <button
               type="button"
               onClick={() => setShowTrackerModal(true)}
-              className="px-5 py-2.5 rounded-2xl text-xs font-black bg-[#0d1425] hover:bg-slate-950 text-slate-100 border border-slate-800 hover:border-amber-400 cursor-pointer flex items-center gap-2 transition-all shadow-md"
+              className="px-2 py-1 rounded-lg text-[10px] md:text-[11px] font-black bg-slate-950/60 hover:bg-slate-900 text-slate-100 border border-slate-800 hover:border-amber-400 cursor-pointer flex items-center gap-1 transition-all"
             >
               <span>📋</span>
-              <span className="flex items-center gap-1.5">
-                <span>{language === 'AR' ? 'تتبع الطلبات' : 'Track Orders'}</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-[#facc15] animate-pulse"></span>
-              </span>
+              <span>{language === 'AR' ? 'تتبع' : 'Track'}</span>
             </button>
 
-          </div>
-
-          {/* MINIFIED SEARCH ROW (SHOWN NEATLY UNDER CONTROLS) */}
-          <div className="w-full max-w-lg mt-1 relative flex items-center gap-2" dir="ltr">
-            <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={language === 'AR' ? '🔴 ابحث عن المنتجات هنا: عسل، باقة شحن، كود ألعاب...' : 'Search airtime packages, honey, game codes...'}
-                className="w-full pl-10 pr-10 py-2.5 bg-slate-950 text-right border border-slate-850 rounded-xl text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-[#facc15] transition-all shadow-inner"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+            {/* 4. السلة */}
             <button
-              onClick={toggleListening}
-              className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-center ${
-                isListening 
-                  ? 'bg-red-950 border-red-500 text-red-400 animate-ping' 
-                  : 'bg-slate-950 border-slate-850 text-amber-400 hover:border-amber-400'
-              }`}
-              title={language === 'AR' ? 'البحث الصوتي' : 'Voice Search'}
+              onClick={onOpenCart}
+              className="px-2 py-1 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-900 text-white transition-all flex items-center gap-1 cursor-pointer text-[10px] md:text-[11px] font-bold"
+              id="cart-trigger-nav"
             >
-              {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              <ShoppingCart className="w-3.5 h-3.5 text-amber-500" />
+              <span>{language === 'AR' ? 'السلة' : 'Cart'}</span>
+              {cartCount > 0 && (
+                <span className="px-1 rounded bg-red-600 text-white font-bold leading-none text-[9px] min-w-4 text-center">
+                  {cartCount}
+                </span>
+              )}
             </button>
+
           </div>
 
         </div>
@@ -728,6 +776,18 @@ export default function Header({
                       {trackedOrder.notes}
                     </div>
                   )}
+
+                  {/* Share status integration */}
+                  <div className="mt-2 pt-2 border-t border-slate-900 flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={handleShareWhatsApp}
+                      className="w-full py-2.5 px-4 rounded-xl bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 hover:text-emerald-300 border border-emerald-500/10 hover:border-emerald-500/20 text-xs font-bold font-sans tracking-wide transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-950/10"
+                    >
+                      <Share2 className="w-4 h-4 text-emerald-400" />
+                      <span>{language === 'AR' ? 'مشاركة حالة الطلب عبر واتساب' : 'Share status to WhatsApp'}</span>
+                    </button>
+                  </div>
 
                 </motion.div>
               ) : (

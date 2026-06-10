@@ -9,6 +9,7 @@ export const DEFAULT_STORE_CONFIG: StoreConfig = {
   shopNameAR: 'مستودع ومتجر الذيباني VIP',
   shopNameEN: 'Al-Dheebani VIP Hybrid Warehouse',
   logoEmoji: '🔱',
+  logoImageUrl: '',
   tickerTextAR: '🔥 مرحباً بكم في مستودع ومتجر الذيباني VIP الشامل للاتصالات وشحن الألعاب والتموينات الغذائية الفاخرة بجودة معتمدة! 🚀',
   tickerTextEN: '🔥 Welcome to Al-Dheebani VIP Hybrid Warehouse: Best pricing for airtimes, game topups and gourmet groceries! 🚀',
   exchangeRateUSD: 530,

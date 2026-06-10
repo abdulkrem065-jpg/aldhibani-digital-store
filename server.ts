@@ -16,6 +16,7 @@ const storeDatabase = {
     shopNameAR: 'هايبر ماركت الـطيب الهجين',
     shopNameEN: 'Al- الطيب Luxury Hybrid Hypermarket',
     logoEmoji: '🛒✨',
+    logoImageUrl: '',
     tickerTextAR: '🔥 عروض نهاية الأسبوع: رصيد مجاني 10% عند الشحن بـ 5000 ريال يمني! 🚀 خصومات على الأجهزة الإلكترونية!',
     tickerTextEN: '🔥 Weekend Offers: 10% bonus on recharges of 5000 YER & above! 🚀 Unbeatable discounts on Electronics!',
     exchangeRateUSD: 530, // 1 USD = 530 YER (Stable Central Yemen rate, editable)
@@ -790,6 +791,31 @@ app.post('/api/products/delete', (req, res) => {
   }
 });
 
+// POST clear all data or specific datasets for pristine setups
+app.post('/api/clear-all', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
+    return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
+  }
+
+  const { target } = req.body; // 'PRODUCTS' | 'CATEGORIES' | 'ORDERS' | 'DEBTS' | 'ALL'
+
+  if (target === 'PRODUCTS' || target === 'ALL') {
+    storeDatabase.products = [];
+  }
+  if (target === 'CATEGORIES' || target === 'ALL') {
+    storeDatabase.categories = [];
+  }
+  if (target === 'ORDERS' || target === 'ALL') {
+    storeDatabase.orders = [];
+  }
+  if (target === 'DEBTS' || target === 'ALL') {
+    storeDatabase.debts = [];
+  }
+
+  res.json({ success: true, target, message: 'تم مسح وتصفية البيانات بنجاح من الخادم!' });
+});
+
 // GET orders
 app.get('/api/orders', (req, res) => {
   res.json(storeDatabase.orders);
@@ -901,6 +927,69 @@ app.post('/api/staff/update-permissions', (req, res) => {
   } else {
     res.status(404).json({ error: 'الموظف غير موجود!' });
   }
+});
+
+// POST staff password change (self)
+app.post('/api/staff/change-password', (req, res) => {
+  const { staffId, currentPassword, newPassword } = req.body;
+  const staff = storeDatabase.staffUsers.find(s => s.id === staffId);
+  if (!staff) {
+    return res.status(404).json({ error: 'الموظف غير موجود!' });
+  }
+
+  // To check previous password: in fallback mode we verify against local config
+  const adminPass = storeDatabase.config.adminPassword || '123';
+  const cashierPass = storeDatabase.config.cashierPassword || '123';
+  const telecomPass = storeDatabase.config.telecomPassword || '123';
+  
+  let actualPass = staff.password || '123';
+  if (staff.role === 'ADMIN') actualPass = adminPass;
+  else if (staff.role === 'CASHIER') actualPass = cashierPass;
+  else if (staff.role === 'COMMUNICATIONS') actualPass = telecomPass;
+
+  if (currentPassword !== actualPass) {
+    return res.status(400).json({ error: 'كلمة المرور الحالية غير صحيحة!' });
+  }
+
+  staff.password = newPassword;
+
+  // Sync to config as well
+  if (staff.role === 'ADMIN') {
+    storeDatabase.config.adminPassword = newPassword;
+  } else if (staff.role === 'CASHIER') {
+    storeDatabase.config.cashierPassword = newPassword;
+  } else if (staff.role === 'COMMUNICATIONS') {
+    storeDatabase.config.telecomPassword = newPassword;
+  }
+
+  res.json({ success: true, message: 'تم تغيير كلمة المرور بنجاح!' });
+});
+
+// POST staff password reset/override (Admin/Manager only can restore other staff passwords)
+app.post('/api/staff/reset-password', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
+    return res.status(403).json({ error: 'صلاحيات غير كافية!' });
+  }
+
+  const { staffId, newPassword } = req.body;
+  const staff = storeDatabase.staffUsers.find(s => s.id === staffId);
+  if (!staff) {
+    return res.status(404).json({ error: 'الموظف غير موجود!' });
+  }
+
+  staff.password = newPassword;
+
+  // Sync back to config as well
+  if (staff.role === 'ADMIN') {
+    storeDatabase.config.adminPassword = newPassword;
+  } else if (staff.role === 'CASHIER') {
+    storeDatabase.config.cashierPassword = newPassword;
+  } else if (staff.role === 'COMMUNICATIONS') {
+    storeDatabase.config.telecomPassword = newPassword;
+  }
+
+  res.json({ success: true, message: 'تم إعادة تعيين كلمة المرور بنجاح!' });
 });
 
 // LAZY INITIALIZATION OF SERVER-SIDE GEMINI API KEY TO PREVENT FAILURE
