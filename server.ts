@@ -52,8 +52,8 @@ async function insertAuditLog(action: string, operator: string, payload: any) {
     if (supabase) {
       const { error } = await supabase.from('audit_log').insert({
         action,
-        operator,
-        payload,
+        actor_id: operator,
+        metadata: payload,
         created_at: new Date().toISOString()
       });
       if (error) {
@@ -81,7 +81,7 @@ function getLocalDefaultPasswordForRole(role: string): string {
 }
 
 // Initialize core server application
-const app = express();
+export const app = express();
 const PORT = 3000;
 
 app.use(express.json());
@@ -1759,4 +1759,6 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}

@@ -172,14 +172,14 @@ export class SupabaseServerlessDB {
         { data: boxesData },
         { data: workforceData }
       ] = await Promise.all([
-        supabase.from('aldhibani_config').select('*').limit(1).maybeSingle(),
-        supabase.from('aldhibani_categories').select('*'),
-        supabase.from('aldhibani_products').select('*'),
-        supabase.from('aldhibani_orders').select('*'),
-        supabase.from('aldhibani_debts').select('*'),
+        supabase.from('store_config').select('*').limit(1).maybeSingle(),
+        supabase.from('categories').select('*'),
+        supabase.from('products').select('*'),
+        supabase.from('orders').select('*'),
+        supabase.from('debts').select('*'),
         supabase.from('staff_users').select('*'),
-        supabase.from('aldhibani_money_boxes').select('*'),
-        supabase.from('aldhibani_youth_workforce').select('*')
+        supabase.from('money_boxes').select('*'),
+        supabase.from('youth_workforce').select('*')
       ]);
 
       if (configData) this.set('aldhibani_local_config', configData);
@@ -205,7 +205,7 @@ export class SupabaseServerlessDB {
 
   static saveConfig(newConfig: StoreConfig): StoreConfig {
     this.set('aldhibani_local_config', newConfig);
-    this.asyncUpsert('aldhibani_config', { id: 'single-row', ...newConfig });
+    this.asyncUpsert('store_config', { id: 'single-row', ...newConfig });
     return newConfig;
   }
 
@@ -223,14 +223,14 @@ export class SupabaseServerlessDB {
       list.push(banner);
     }
     this.set('aldhibani_local_banners', list);
-    this.asyncUpsert('aldhibani_banners', banner);
+    this.asyncUpsert('banners', banner);
     return list;
   }
 
   static deleteBanner(id: string): Banner[] {
     const list = this.getBanners().filter(b => b.id !== id);
     this.set('aldhibani_local_banners', list);
-    this.asyncDelete('aldhibani_banners', id);
+    this.asyncDelete('banners', id);
     return list;
   }
 
@@ -248,14 +248,14 @@ export class SupabaseServerlessDB {
       list.push(cat);
     }
     this.set('aldhibani_local_categories', list);
-    this.asyncUpsert('aldhibani_categories', cat);
+    this.asyncUpsert('categories', cat);
     return list;
   }
 
   static deleteCategory(id: string): CustomCategory[] {
     const list = this.getCategories().filter(c => c.id !== id);
     this.set('aldhibani_local_categories', list);
-    this.asyncDelete('aldhibani_categories', id);
+    this.asyncDelete('categories', id);
     return list;
   }
 
@@ -273,42 +273,42 @@ export class SupabaseServerlessDB {
       list.push(prod);
     }
     this.set('aldhibani_local_products', list);
-    this.asyncUpsert('aldhibani_products', prod);
+    this.asyncUpsert('products', prod);
     return list;
   }
 
   static deleteProduct(id: string): Product[] {
     const list = this.getProducts().filter(p => p.id !== id);
     this.set('aldhibani_local_products', list);
-    this.asyncDelete('aldhibani_products', id);
+    this.asyncDelete('products', id);
     return list;
   }
 
   static clearAllProducts(): void {
     this.set('aldhibani_local_products', []);
     if (supabase) {
-      supabase.from('aldhibani_products').delete().neq('id', 'keep-dummy').then(() => {});
+      supabase.from('products').delete().neq('id', 'keep-dummy').then(() => {});
     }
   }
 
   static clearAllCategories(): void {
     this.set('aldhibani_local_categories', []);
     if (supabase) {
-      supabase.from('aldhibani_categories').delete().neq('id', 'keep-dummy').then(() => {});
+      supabase.from('categories').delete().neq('id', 'keep-dummy').then(() => {});
     }
   }
 
   static clearAllOrders(): void {
     this.set('aldhibani_local_orders', []);
     if (supabase) {
-      supabase.from('aldhibani_orders').delete().neq('id', 'keep-dummy').then(() => {});
+      supabase.from('orders').delete().neq('id', 'keep-dummy').then(() => {});
     }
   }
 
   static clearAllDebts(): void {
     this.set('aldhibani_local_debts', []);
     if (supabase) {
-      supabase.from('aldhibani_debts').delete().neq('id', 'keep-dummy').then(() => {});
+      supabase.from('debts').delete().neq('id', 'keep-dummy').then(() => {});
     }
   }
 
@@ -329,7 +329,7 @@ export class SupabaseServerlessDB {
       this.autoRouteOrderFundsToBoxes(order);
     }
     this.set('aldhibani_local_orders', list);
-    this.asyncUpsert('aldhibani_orders', order);
+    this.asyncUpsert('orders', order);
     return list;
   }
 
@@ -347,14 +347,14 @@ export class SupabaseServerlessDB {
       list.push(debt);
     }
     this.set('aldhibani_local_debts', list);
-    this.asyncUpsert('aldhibani_debts', debt);
+    this.asyncUpsert('debts', debt);
     return list;
   }
 
   static deleteDebt(id: string): DebtRecord[] {
     const list = this.getDebts().filter(d => d.id !== id);
     this.set('aldhibani_local_debts', list);
-    this.asyncDelete('aldhibani_debts', id);
+    this.asyncDelete('debts', id);
     return list;
   }
 
@@ -449,7 +449,7 @@ export class SupabaseServerlessDB {
     this.set('aldhibani_money_boxes', boxes);
     if (supabase) {
       boxes.forEach(box => {
-        this.asyncUpsert('aldhibani_money_boxes', box);
+        this.asyncUpsert('money_boxes', box);
       });
     }
   }
@@ -478,7 +478,7 @@ export class SupabaseServerlessDB {
     this.set('aldhibani_youth_workforce', workforce);
     if (supabase) {
       workforce.forEach(worker => {
-        this.asyncUpsert('aldhibani_youth_workforce', worker);
+        this.asyncUpsert('youth_workforce', worker);
       });
     }
   }

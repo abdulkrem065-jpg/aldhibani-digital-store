@@ -131,58 +131,6 @@ export default function Header({
     }
   };
 
-  // Submit dialog chat to server
-  const sendAIChatMessage = async (textToSend?: string) => {
-    const text = textToSend || aiChatInput;
-    if (!text.trim()) return;
-
-    // Add user question to history
-    setChatHistory(prev => [...prev, { sender: 'user', text }]);
-    if (!textToSend) setAiChatInput('');
-    setAiLoading(true);
-
-    try {
-      const response = await fetch('/api/gemini/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: text,
-          language
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Add response to chat bubble
-        setChatHistory(prev => [...prev, { sender: 'bot', text: data.text }]);
-        
-        // Execute dynamic purchase actions returned by server
-        if (data.action && data.action.type === 'ADD_TO_CART') {
-          onAddToCart(data.action.product);
-          setChatHistory(prev => [...prev, { 
-            sender: 'bot', 
-            text: language === 'AR'
-              ? `✅ [أمر مدمج] تمت إضافة "${data.action.product.nameAR}" إلى سلتك بنجاح!`
-              : `✅ [Embedded action] Added "${data.action.product.nameEN}" to your shopping basket!`,
-            isAction: true 
-          }]);
-        }
-      } else {
-        setChatHistory(prev => [...prev, { 
-          sender: 'bot', 
-          text: language === 'AR' ? 'عذراً، حدث خطأ أثناء معالجة ردك.' : 'Failed to fetch model response.'
-        }]);
-      }
-    } catch (err) {
-      setChatHistory(prev => [...prev, { 
-        sender: 'bot', 
-        text: language === 'AR' ? 'فشل الاتصال بالذكاء الاصطناعي.' : 'AI network pathway offline.'
-      }]);
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
   const getOrderStatusIcon = (status: string) => {
     switch (status) {
       case 'PENDING': return <Clock className="w-5 h-5 text-amber-500" />;
