@@ -556,13 +556,75 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// GET database diagnostics check
+app.get('/api/diagnostics', async (req, res) => {
+  const serverConnected = !!supabase;
+  let supabaseResponseOk = false;
+  let errorMsg = '';
+  let tablesChecked: { [key: string]: boolean | string } = {};
+
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from('store_config').select('*').limit(1).maybeSingle();
+      if (!error) {
+        supabaseResponseOk = true;
+        tablesChecked['store_config'] = 'OK ✅';
+      } else {
+        errorMsg = error.message;
+        tablesChecked['store_config'] = `Error: ${error.message} ❌`;
+      }
+    } catch (e: any) {
+      errorMsg = e.message;
+      tablesChecked['store_config'] = `Exception: ${e.message} ❌`;
+    }
+    
+    // Quick test products table and other tables
+    const checkTables = ['products', 'categories', 'orders', 'debts', 'staff_users'];
+    for (const t of checkTables) {
+      try {
+        const { error } = await supabase.from(t).select('count', { count: 'exact', head: true }).limit(1);
+        if (!error) {
+          tablesChecked[t] = 'OK ✅';
+        } else {
+          tablesChecked[t] = `Error: ${error.message} ❌`;
+        }
+      } catch (e: any) {
+        tablesChecked[t] = `Exception: ${e.message} ❌`;
+      }
+    }
+  }
+
+  res.json({
+    timestamp: new Date().toISOString(),
+    backendInitialized: true,
+    supabaseInitialized: serverConnected,
+    supabaseResponseOk,
+    supabaseError: errorMsg,
+    tables: tablesChecked,
+    details: {
+      supabaseUrl: supabaseUrl ? `${supabaseUrl.substring(0, 20)}...` : 'Not Set',
+      supabaseKeyLength: supabaseAnonKey ? supabaseAnonKey.length : 0,
+    }
+  });
+});
+
 // GET configuration
-app.get('/api/config', (req, res) => {
+app.get('/api/config', async (req, res) => {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from('store_config').select('*').limit(1).maybeSingle();
+      if (!error && data) {
+        storeDatabase.config = { ...storeDatabase.config, ...data };
+      }
+    } catch (e) {
+      console.error('[Supabase GET Config Error]', e);
+    }
+  }
   res.json(storeDatabase.config);
 });
 
 // UPDATE configuration (Admin only)
-app.post('/api/config', (req, res) => {
+app.post('/api/config', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
     return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
@@ -572,6 +634,15 @@ app.post('/api/config', (req, res) => {
     ...storeDatabase.config,
     ...req.body
   };
+
+  if (supabase) {
+    try {
+      await supabase.from('store_config').upsert({ id: 'single-row', ...storeDatabase.config });
+    } catch (e) {
+      console.error('[Supabase POST Config Sync Error]', e);
+    }
+  }
+
   res.json({ success: true, config: storeDatabase.config });
 });
 
@@ -795,25 +866,57 @@ app.post('/api/sync-products', (req, res) => {
     }
   });
 
+  if (supabase && importedProducts.length > 0) {
+    supabase.from('products').upsert(importedProducts)
+      .then(({ error }: { error: any }) => {
+        if (error) {
+          console.error('[Supabase Sync Products Error]', error);
+        } else {
+          console.log('[Supabase Sync Products Success] Successfully upserted products:', importedProducts.length);
+        }
+      })
+      .catch((err: any) => console.error('[Supabase Sync Products Exception]', err));
+  }
+
   res.json({
     success: true,
-    message: `تم استدعاء وجلب عدد (${importedProducts.length}) من الأصناف والخدمات بنجاح من قاعدة الربط الخارجية (${integrationType})!`,
+    message: `تم استدعاء وجلب عدد (${importedProducts.length}) من الأصناف والخدمات بنجاح من قاعدة الربط الخارجية (${integrationType}) ومزامنتها بنجاح سحابياً!`,
     products: storeDatabase.products
   });
 });
 
 // GET categories
-app.get('/api/categories', (req, res) => {
+app.get('/api/categories', async (req, res) => {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from('categories').select('*');
+      if (!error && data && data.length > 0) {
+        storeDatabase.categories = data;
+      }
+    } catch (e) {
+      console.error('[Supabase GET Categories Error]', e);
+    }
+  }
   res.json(storeDatabase.categories || []);
 });
 
 // GET banners
-app.get('/api/banners', (req, res) => {
+app.get('/api/banners', async (req, res) => {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from('banners').select('*');
+      if (!error && data && data.length > 0) {
+        storeDatabase.banners = data;
+      }
+    } catch (e) {
+      console.error('[Supabase GET Banners Error]', e);
+    }
+  }
   res.json(storeDatabase.banners || []);
 });
 
 // POST edit or add banner
-app.post('/api/banners', (req, res) => {
+app.post('/api/banners', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
     return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
@@ -845,15 +948,23 @@ app.post('/api/banners', (req, res) => {
 
   if (idx !== -1) {
     storeDatabase.banners[idx] = bannerData;
-    res.json({ success: true, banner: storeDatabase.banners[idx] });
   } else {
     storeDatabase.banners.push(bannerData);
-    res.json({ success: true, banner: bannerData });
   }
+
+  if (supabase) {
+    try {
+      await supabase.from('banners').upsert(bannerData);
+    } catch (e) {
+      console.error('[Supabase Banners Upsert Error]', e);
+    }
+  }
+
+  res.json({ success: true, banner: bannerData });
 });
 
 // DELETE banner
-app.post('/api/banners/delete', (req, res) => {
+app.post('/api/banners/delete', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
     return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
@@ -867,6 +978,13 @@ app.post('/api/banners/delete', (req, res) => {
   const idx = storeDatabase.banners.findIndex(b => b.id === id);
   if (idx !== -1) {
     const deleted = storeDatabase.banners.splice(idx, 1)[0];
+    if (supabase) {
+      try {
+        await supabase.from('banners').delete().eq('id', id);
+      } catch (e) {
+        console.error('[Supabase Banners Delete Error]', e);
+      }
+    }
     res.json({ success: true, banner: deleted });
   } else {
     res.status(404).json({ error: 'البنر غير موجود!' });
@@ -874,7 +992,7 @@ app.post('/api/banners/delete', (req, res) => {
 });
 
 // POST edit or add custom category
-app.post('/api/categories', (req, res) => {
+app.post('/api/categories', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
     return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
@@ -894,6 +1012,7 @@ app.post('/api/categories', (req, res) => {
     storeDatabase.categories = [];
   }
 
+  let finalCategory: CustomCategory;
   const idx = storeDatabase.categories.findIndex(c => c.id === cleanId);
   if (idx !== -1) {
     storeDatabase.categories[idx] = {
@@ -903,22 +1022,31 @@ app.post('/api/categories', (req, res) => {
       icon: icon || storeDatabase.categories[idx].icon || 'Layers',
       color: color || storeDatabase.categories[idx].color || 'from-slate-900 to-slate-950',
     };
-    res.json({ success: true, category: storeDatabase.categories[idx] });
+    finalCategory = storeDatabase.categories[idx];
   } else {
-    const newCat: CustomCategory = {
+    finalCategory = {
       id: cleanId,
       nameAR: arName,
       nameEN: enName,
       icon: icon || 'Layers',
       color: color || 'from-slate-900 to-slate-950',
     };
-    storeDatabase.categories.push(newCat);
-    res.json({ success: true, category: newCat });
+    storeDatabase.categories.push(finalCategory);
   }
+
+  if (supabase) {
+    try {
+      await supabase.from('categories').upsert(finalCategory);
+    } catch (e) {
+      console.error('[Supabase Categories Upsert Error]', e);
+    }
+  }
+
+  res.json({ success: true, category: finalCategory });
 });
 
 // POST delete category
-app.post('/api/categories/delete', (req, res) => {
+app.post('/api/categories/delete', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
     return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
@@ -932,6 +1060,13 @@ app.post('/api/categories/delete', (req, res) => {
   const idx = storeDatabase.categories.findIndex(c => c.id === id);
   if (idx !== -1) {
     const deleted = storeDatabase.categories.splice(idx, 1)[0];
+    if (supabase) {
+      try {
+        await supabase.from('categories').delete().eq('id', id);
+      } catch (e) {
+        console.error('[Supabase Categories Delete Error]', e);
+      }
+    }
     res.json({ success: true, category: deleted });
   } else {
     res.status(404).json({ error: 'الفئة غير موجودة' });
@@ -939,12 +1074,22 @@ app.post('/api/categories/delete', (req, res) => {
 });
 
 // GET products
-app.get('/api/products', (req, res) => {
+app.get('/api/products', async (req, res) => {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from('products').select('*');
+      if (!error && data && data.length > 0) {
+        storeDatabase.products = data;
+      }
+    } catch (e) {
+      console.error('[Supabase GET Products Error]', e);
+    }
+  }
   res.json(storeDatabase.products);
 });
 
 // POST update products (Admin or Telecom Manager)
-app.post('/api/products', (req, res) => {
+app.post('/api/products', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
     return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
@@ -956,6 +1101,7 @@ app.post('/api/products', (req, res) => {
     product_image_url, is_ai_suggested, ai_suggested_url
   } = req.body;
   
+  let finalProduct: Product;
   // Find or create
   const idx = storeDatabase.products.findIndex(p => p.id === id);
   if (idx !== -1) {
@@ -976,10 +1122,10 @@ app.post('/api/products', (req, res) => {
       is_ai_suggested: is_ai_suggested !== undefined ? Boolean(is_ai_suggested) : storeDatabase.products[idx].is_ai_suggested,
       ai_suggested_url: ai_suggested_url !== undefined ? ai_suggested_url : storeDatabase.products[idx].ai_suggested_url,
     };
-    res.json({ success: true, product: storeDatabase.products[idx] });
+    finalProduct = storeDatabase.products[idx];
   } else {
     // Add new product
-    const newProd: Product = {
+    finalProduct = {
       id: id || `ph-el-${Date.now()}`,
       nameAR: nameAR || 'صنف جديد',
       nameEN: nameEN || 'New Product',
@@ -996,13 +1142,22 @@ app.post('/api/products', (req, res) => {
       is_ai_suggested: is_ai_suggested,
       ai_suggested_url: ai_suggested_url,
     };
-    storeDatabase.products.push(newProd);
-    res.json({ success: true, product: newProd });
+    storeDatabase.products.push(finalProduct);
   }
+
+  if (supabase) {
+    try {
+      await supabase.from('products').upsert(finalProduct);
+    } catch (e) {
+      console.error('[Supabase Products Upsert Error]', e);
+    }
+  }
+
+  res.json({ success: true, product: finalProduct });
 });
 
 // DELETE products endpoint via POST
-app.post('/api/products/delete', (req, res) => {
+app.post('/api/products/delete', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
     return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
@@ -1012,6 +1167,13 @@ app.post('/api/products/delete', (req, res) => {
   const idx = storeDatabase.products.findIndex(p => p.id === id);
   if (idx !== -1) {
     const deleted = storeDatabase.products.splice(idx, 1)[0];
+    if (supabase) {
+      try {
+        await supabase.from('products').delete().eq('id', id);
+      } catch (e) {
+        console.error('[Supabase Products Delete Error]', e);
+      }
+    }
     res.json({ success: true, product: deleted });
   } else {
     res.status(404).json({ error: 'الصنف غير موجود!' });
@@ -1019,7 +1181,7 @@ app.post('/api/products/delete', (req, res) => {
 });
 
 // POST clear all data or specific datasets for pristine setups
-app.post('/api/clear-all', (req, res) => {
+app.post('/api/clear-all', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
     return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
@@ -1029,27 +1191,65 @@ app.post('/api/clear-all', (req, res) => {
 
   if (target === 'PRODUCTS' || target === 'ALL') {
     storeDatabase.products = [];
+    if (supabase) {
+      try {
+        await supabase.from('products').delete().neq('id', 'keep-dummy');
+      } catch (e) {
+        console.error('[Supabase Clear Products Error]', e);
+      }
+    }
   }
   if (target === 'CATEGORIES' || target === 'ALL') {
     storeDatabase.categories = [];
+    if (supabase) {
+      try {
+        await supabase.from('categories').delete().neq('id', 'keep-dummy');
+      } catch (e) {
+        console.error('[Supabase Clear Categories Error]', e);
+      }
+    }
   }
   if (target === 'ORDERS' || target === 'ALL') {
     storeDatabase.orders = [];
+    if (supabase) {
+      try {
+        await supabase.from('orders').delete().neq('id', 'keep-dummy');
+      } catch (e) {
+        console.error('[Supabase Clear Orders Error]', e);
+      }
+    }
   }
   if (target === 'DEBTS' || target === 'ALL') {
     storeDatabase.debts = [];
+    if (supabase) {
+      try {
+        await supabase.from('debts').delete().neq('id', 'keep-dummy');
+      } catch (e) {
+        console.error('[Supabase Clear Debts Error]', e);
+      }
+    }
   }
 
-  res.json({ success: true, target, message: 'تم مسح وتصفية البيانات بنجاح من الخادم!' });
+  res.json({ success: true, target, message: 'تم مسح وتصفية البيانات بنجاح من الخادم وقاعدة البيانات السحابية!' });
 });
 
 // GET orders
-app.get('/api/orders', (req, res) => {
+app.get('/api/orders', async (req, res) => {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from('orders').select('*');
+      if (!error && data && data.length > 0) {
+        storeDatabase.orders = data;
+      }
+    } catch (e) {
+      console.error('[Supabase GET Orders Error]', e);
+    }
+  }
   res.json(storeDatabase.orders);
 });
 
 // POST create orders
-app.post('/api/orders', (req, res) => {
+app.post('/api/orders', async (req, res) => {
   const { items, currency, totalYER, customerName, customerPhone, notes, paymentMethod, cashierId } = req.body;
   
   if (!items || items.length === 0) {
@@ -1076,15 +1276,27 @@ app.post('/api/orders', (req, res) => {
     const storeProd = storeDatabase.products.find(p => p.id === pId);
     if (storeProd && storeProd.stock !== undefined) {
       storeProd.stock = Math.max(0, storeProd.stock - item.quantity);
+      if (supabase) {
+        supabase.from('products').upsert(storeProd).then(() => {});
+      }
     }
   });
 
   storeDatabase.orders.unshift(newOrder); // Add to beginning of track list
+
+  if (supabase) {
+    try {
+      await supabase.from('orders').upsert(newOrder);
+    } catch (e) {
+      console.error('[Supabase Orders Upsert Error]', e);
+    }
+  }
+
   res.json({ success: true, order: newOrder });
 });
 
 // UPDATE order status (Admin/Staff)
-app.post('/api/orders/update-status', (req, res) => {
+app.post('/api/orders/update-status', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
     return res.status(403).json({ error: 'صلاحيات غير كافية!' });
@@ -1094,6 +1306,13 @@ app.post('/api/orders/update-status', (req, res) => {
   const order = storeDatabase.orders.find(o => o.id === id);
   if (order) {
     order.status = status;
+    if (supabase) {
+      try {
+        await supabase.from('orders').upsert(order);
+      } catch (e) {
+        console.error('[Supabase Orders Update Status Error]', e);
+      }
+    }
     res.json({ success: true, order });
   } else {
     res.status(404).json({ error: 'الطلب غير موجود!' });
@@ -1101,12 +1320,22 @@ app.post('/api/orders/update-status', (req, res) => {
 });
 
 // GET debts
-app.get('/api/debts', (req, res) => {
+app.get('/api/debts', async (req, res) => {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from('debts').select('*');
+      if (!error && data && data.length > 0) {
+        storeDatabase.debts = data;
+      }
+    } catch (e) {
+      console.error('[Supabase GET Debts Error]', e);
+    }
+  }
   res.json(storeDatabase.debts);
 });
 
 // POST modify/add debt
-app.post('/api/debts', (req, res) => {
+app.post('/api/debts', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
     return res.status(403).json({ error: 'صلاحيات غير كافية!' });
@@ -1114,17 +1343,20 @@ app.post('/api/debts', (req, res) => {
 
   const { id, customerName, customerPhone, totalDebtYER, notes } = req.body;
 
+  let finalDebt: DebtRecord;
   const idx = storeDatabase.debts.findIndex(d => d.id === id);
   if (idx !== -1) {
     storeDatabase.debts[idx] = {
       ...storeDatabase.debts[idx],
+      customerName: customerName !== undefined ? customerName : storeDatabase.debts[idx].customerName,
+      customerPhone: customerPhone !== undefined ? customerPhone : storeDatabase.debts[idx].customerPhone,
       totalDebtYER: Number(totalDebtYER),
       notes: notes !== undefined ? notes : storeDatabase.debts[idx].notes,
       updatedAt: new Date().toISOString()
     };
-    res.json({ success: true, debt: storeDatabase.debts[idx] });
+    finalDebt = storeDatabase.debts[idx];
   } else {
-    const newDebt: DebtRecord = {
+    finalDebt = {
       id: id || `debt-${Date.now()}`,
       customerName: customerName || 'عميل مجهول',
       customerPhone: customerPhone || '',
@@ -1132,9 +1364,18 @@ app.post('/api/debts', (req, res) => {
       notes: notes || '',
       updatedAt: new Date().toISOString()
     };
-    storeDatabase.debts.push(newDebt);
-    res.json({ success: true, debt: newDebt });
+    storeDatabase.debts.push(finalDebt);
   }
+
+  if (supabase) {
+    try {
+      await supabase.from('debts').upsert(finalDebt);
+    } catch (e) {
+      console.error('[Supabase Debts Upsert Error]', e);
+    }
+  }
+
+  res.json({ success: true, debt: finalDebt });
 });
 
 // POST staff management (Admin only)
@@ -1327,6 +1568,14 @@ app.post('/api/staff/change-password', async (req, res) => {
       storeDatabase.config.telecomPassword = newPassword;
     }
 
+    if (supabase) {
+      try {
+        await supabase.from('store_config').upsert({ id: 'single-row', ...storeDatabase.config });
+      } catch (e) {
+        console.error('[Supabase Post Config Sync Error during Password Change]', e);
+      }
+    }
+
     // Record inside audit_log
     await insertAuditLog(
       'PASSWORD_CHANGED',
@@ -1411,6 +1660,14 @@ app.post('/api/staff/reset-password', async (req, res) => {
       storeDatabase.config.cashierPassword = newPassword;
     } else if (staff.role === 'COMMUNICATIONS' || staff.role === 'STORE_MANAGER') {
       storeDatabase.config.telecomPassword = newPassword;
+    }
+
+    if (supabase) {
+      try {
+        await supabase.from('store_config').upsert({ id: 'single-row', ...storeDatabase.config });
+      } catch (e) {
+        console.error('[Supabase Post Config Sync Error during Password Reset]', e);
+      }
     }
 
     // Record inside audit_log

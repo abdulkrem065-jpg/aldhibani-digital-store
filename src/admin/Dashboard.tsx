@@ -260,6 +260,29 @@ export default function Dashboard({
     setLedgerPage(1);
   }, [selectedCashierOffice, selectedStatusFilter, selectedPeriodFilter, excludeArchivedPast]);
 
+  // Proactively pre-populate default wizard email and google drive link matching user requirement
+  useEffect(() => {
+    if (!localStorage.getItem('import_wizard_gdrive_link')) {
+      const defaultGdriveLink = 'https://drive.google.com/file/d/1T0hynySeDmqMYRkKezCqPTntcBnLpY0o/view?usp=drivesdk';
+      localStorage.setItem('import_wizard_gdrive_link', defaultGdriveLink);
+      setWizardGdriveLink(defaultGdriveLink);
+      
+      const fileMatch = defaultGdriveLink.match(/\/file\/d\/([a-zA-Z0-9-_]{25,50})/);
+      if (fileMatch && fileMatch[1]) {
+        const extractedId = fileMatch[1];
+        const updatedConf = { ...config, remoteGDriveFolderId: extractedId };
+        setConfig(updatedConf);
+        onConfigChanged(updatedConf);
+        saveItem('aldhibani_local_config', updatedConf);
+      }
+    }
+    if (!localStorage.getItem('import_wizard_gdrive_email')) {
+      const defaultEmail = 'abdulkrem065@gmail.com';
+      localStorage.setItem('import_wizard_gdrive_email', defaultEmail);
+      setWizardGdriveEmail(defaultEmail);
+    }
+  }, []);
+
   // RequestAnimationFrame scheduling helper to keep UI buttery smooth at high refresh rate
   const updateMatchedOrdersWithRAF = (newIds: string[] | ((prev: string[]) => string[])) => {
     requestAnimationFrame(() => {

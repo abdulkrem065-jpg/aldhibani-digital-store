@@ -28,10 +28,23 @@ import { t } from './lib/translations';
 
 export default function App() {
   // Session Router States
-  const [view, setView] = useState<'GATEWAY' | 'STORE'>('GATEWAY');
-  const [currentUser, setCurrentUser] = useState<StaffUser | null>(null);
-  const [authToken, setAuthToken] = useState<string | null>(null);
-  const [isAdminView, setIsAdminView] = useState(false);
+  const [view, setView] = useState<'GATEWAY' | 'STORE'>(() => {
+    return (localStorage.getItem('aldhibani_view') as any) || 'GATEWAY';
+  });
+  const [currentUser, setCurrentUser] = useState<StaffUser | null>(() => {
+    const saved = localStorage.getItem('aldhibani_user');
+    try {
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [authToken, setAuthToken] = useState<string | null>(() => {
+    return localStorage.getItem('aldhibani_token') || null;
+  });
+  const [isAdminView, setIsAdminView] = useState(() => {
+    return localStorage.getItem('aldhibani_is_admin') === 'true';
+  });
 
   // Global Context preferences
   const [language, setLanguage] = useState<Language>('AR');
@@ -312,6 +325,11 @@ export default function App() {
     setAuthToken(token);
     setView('STORE');
     setIsAdminView(true); // Open directly into Admin view for convenience
+
+    localStorage.setItem('aldhibani_user', JSON.stringify(user));
+    localStorage.setItem('aldhibani_token', token);
+    localStorage.setItem('aldhibani_view', 'STORE');
+    localStorage.setItem('aldhibani_is_admin', 'true');
   };
 
   // Visitor shopping bypass
@@ -325,6 +343,11 @@ export default function App() {
     } else {
       setActiveCategory('ALL');
     }
+
+    localStorage.removeItem('aldhibani_user');
+    localStorage.removeItem('aldhibani_token');
+    localStorage.setItem('aldhibani_view', 'STORE');
+    localStorage.setItem('aldhibani_is_admin', 'false');
   };
 
   const handleLogout = () => {
@@ -332,6 +355,11 @@ export default function App() {
     setAuthToken(null);
     setView('GATEWAY');
     setIsAdminView(false);
+
+    localStorage.removeItem('aldhibani_user');
+    localStorage.removeItem('aldhibani_token');
+    localStorage.setItem('aldhibani_view', 'GATEWAY');
+    localStorage.setItem('aldhibani_is_admin', 'false');
   };
 
   // Adding product to basket logic (handling direct cell / id entries)
