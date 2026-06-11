@@ -38,61 +38,98 @@ export default function Gateway({ onBypass, onLoginSuccess, storeNameAR, storeNa
     setLoading(true);
     setErrorMsg('');
 
+    console.log('[Auth Debug] === STARTING LOGIN SUBMISSION ===');
+    console.log('[Auth Debug] Input Username:', username);
+    console.log('[Auth Debug] Input Password Length:', password?.length);
+    console.log('[Auth Debug] Token Login Switch State:', showTokenInput);
+
     try {
       // Fetch credentials and staff directly from our serverless database (independent of server.ts)
       const localConfig = SupabaseServerlessDB.getConfig();
       const staffList = SupabaseServerlessDB.getStaff();
       const activeToken = localConfig.secureSystemToken || 'STABLE_LUXURY_HYPERMARKET_KEY_TOKEN_2026';
 
+      console.log('[Auth Debug] Local Config retrieved from Local Storage:', localConfig);
+      console.log('[Auth Debug] Local Staff List length:', staffList?.length);
+      console.log('[Auth Debug] Active Token required for Admin bypass:', activeToken);
+
       if (showTokenInput) {
+        console.log('[Auth Debug] Validating plain Auth Token:', authToken);
         if (authToken === activeToken || authToken === 'STABLE_LUXURY_HYPERMARKET_KEY_TOKEN_2026') {
+          console.log('[Auth Debug] Auth Token MATCHED success. Logging in default admin profile...');
           const adminUser = staffList.find(u => u.role === 'ADMIN') || staffList[0];
           onLoginSuccess(adminUser, activeToken);
           setLoading(false);
           return;
+        } else {
+          console.log('[Auth Debug] Token mismatch! Expected:', activeToken);
         }
       } else {
         // 1. Direct Cloud Lookup from Supabase 'staff_users' table (Independent of server.ts)
+        console.log('[Auth Debug] Attempting cloud lookup via SupabaseServerlessDB.authenticateFromSupabase...');
         const cloudUser = await SupabaseServerlessDB.authenticateFromSupabase(username, password);
+        
         if (cloudUser) {
+          console.log('[Auth Debug] Cloud Lookup succeeded! User authenticated is:', cloudUser);
           onLoginSuccess(cloudUser, activeToken);
           setLoading(false);
           return;
+        } else {
+          console.log('[Auth Debug] Cloud Lookup returned null or failed. Proceeding with robust offline fallback.');
         }
 
         // 2. High-reliability fallback using local synchronized offline staff array
         const matched = staffList.find(
           u => u.username.toLowerCase() === username?.trim().toLowerCase()
         );
+        console.log('[Auth Debug] Offline profile match found for username:', matched);
+
         if (matched) {
           let isValid = false;
           const adminPass = localConfig.adminPassword || '123';
           const cashierPass = localConfig.cashierPassword || '123';
           const telecomPass = localConfig.telecomPassword || '123';
 
+          console.log('[Auth Debug] Local fallbacks expected passwords:');
+          console.log(' - ADMIN Role Expected Password:', adminPass);
+          console.log(' - CASHIER Role Expected Password:', cashierPass);
+          console.log(' - COMMUNICATIONS / STORE_MANAGER Role Expected:", telecomPass');
+          console.log(' - Provided Password:', password);
+
           if (matched.role === 'ADMIN' && password === adminPass) {
+            console.log('[Auth Debug] Password matched ADMIN account password!');
             isValid = true;
           } else if (matched.role === 'CASHIER' && password === cashierPass) {
+            console.log('[Auth Debug] Password matched CASHIER account password!');
             isValid = true;
           } else if (matched.role === 'COMMUNICATIONS' && password === telecomPass) {
+            console.log('[Auth Debug] Password matched COMMUNICATIONS account password!');
             isValid = true;
           } else if (password === '123' || password === adminPass) {
+            console.log('[Auth Debug] Password fell back to default 123 or admin override!');
             isValid = true;
+          } else {
+            console.log('[Auth Debug] Password did not match any local configurations.');
           }
 
           if (isValid) {
+            console.log('[Auth Debug] Local validation succeeded. Forwarding to onLoginSuccess...');
             onLoginSuccess(matched, activeToken);
             setLoading(false);
             return;
           }
+        } else {
+          console.log('[Auth Debug] No offline staff user found matching username:', username);
         }
       }
 
+      console.warn('[Auth Debug] ALL credentials checks (cloud + local fallback) have failed!');
       setErrorMsg(lang === 'AR' 
         ? `بيانات الدخول غير صحيحة، يرجى التأكد وإعادة المحاولة.` 
         : `Invalid credentials. Please verify your credentials and try again.`
       );
     } catch (err) {
+      console.error('[Auth Debug] Exception encountered during handleLoginSubmit:', err);
       setErrorMsg(lang === 'AR' 
         ? `فشل نظام تسجيل الدخول السحابي. يرجى تجربة كلمة المرور الافتراضية "123".` 
         : `Cloud authentication lookup failed. Please try standard fallback password ("123").`

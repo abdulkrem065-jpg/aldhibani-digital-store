@@ -364,35 +364,54 @@ export class SupabaseServerlessDB {
   }
 
   static async authenticateFromSupabase(username: string, passwordPlain: string): Promise<StaffUser | null> {
+    console.log('[Supabase Direct Auth Client] Trying API backend auth for:', username);
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password: passwordPlain })
       });
+      console.log('[Supabase Direct Auth Client] API response status:', response.status);
       if (response.ok) {
         const data = await response.json();
+        console.log('[Supabase Direct Auth Client] API response body payload:', data);
         if (data.success && data.user) {
+          console.log('[Supabase Direct Auth Client] Backend matched and verified user profile successfully!');
           return data.user;
         }
       }
-      return null;
+      console.log('[Supabase Direct Auth Client] API login did not succeed (non-200 or success=false). Swerving to client-side Direct Supabase DB lookup...');
+      throw new Error('API login unsuccessful');
     } catch (err) {
-      console.warn('[Supabase Direct Auth Client-Side Fallback]', err);
-      if (!supabase) return null;
+      console.warn('[Supabase Direct Auth Client-Side Fallback] Exception during API login:', err);
+      if (!supabase) {
+        console.warn('[Supabase Direct Auth Client] Supabase client NOT initialized. Cannot perform direct DB query.');
+        return null;
+      }
       try {
+        console.log('[Supabase Direct Auth Client] Executing direct cloud query on table "staff_users" for username:', username.trim());
         const { data, error } = await supabase
           .from('staff_users')
           .select('*')
           .eq('username', username.trim());
         
-        if (error || !data || data.length === 0) {
+        if (error) {
+          console.error('[Supabase Direct Auth Client] Supabase DB error returned:', error);
+          return null;
+        }
+        
+        if (!data || data.length === 0) {
+          console.log('[Supabase Direct Auth Client] DB returned no records on "staff_users" table for username:', username);
           return null;
         }
 
+        console.log('[Supabase Direct Auth Client] Query records found:', data);
         const matched = data.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
         if (matched) {
           const storedSecret = matched.password_hash || matched.password;
+          console.log('[Supabase Direct Auth Client] Direct DB record stored password secret:', storedSecret);
+          console.log('[Supabase Direct Auth Client] Comparing with provided plain password:', passwordPlain);
+          
           if (storedSecret && String(storedSecret) === passwordPlain) {
             let permissionsObj = matched.permissions;
             if (typeof permissionsObj === 'string') {
@@ -402,12 +421,16 @@ export class SupabaseServerlessDB {
                 permissionsObj = { viewSales: true, viewRecharges: true, editInventory: true, manageStaff: false };
               }
             }
-            return {
+            const processedUser: StaffUser = {
               id: String(matched.id),
               username: matched.username,
               role: matched.role as any,
               permissions: permissionsObj || { viewSales: true, viewRecharges: true, editInventory: true, manageStaff: false }
             };
+            console.log('[Supabase Direct Auth Client] Match found and password correct! Processed user:', processedUser);
+            return processedUser;
+          } else {
+            console.warn('[Supabase Direct Auth Client] Password comparison failed.');
           }
         }
         return null;

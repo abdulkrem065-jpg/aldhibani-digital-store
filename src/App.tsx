@@ -305,6 +305,9 @@ export default function App() {
 
   // Handle traditional Login
   const handleLoginSuccess = (user: StaffUser, token: string) => {
+    console.log('[Auth Debug] handleLoginSuccess successfully invoked!');
+    console.log('[Auth Debug] Logged-in Staff User Profile:', user);
+    console.log('[Auth Debug] Admin Security Token:', token);
     setCurrentUser(user);
     setAuthToken(token);
     setView('STORE');
