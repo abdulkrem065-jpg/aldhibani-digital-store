@@ -11,11 +11,17 @@ import { BatchImporter, BatchImportResult } from './batch-importer';
 
 export interface ImportJob {
   id: string;
-  status: 'pending' | 'processing' | 'success' | 'failed';
+  status: 'pending' | 'processing' | 'success' | 'failed' | 'rolled_back';
   progress: number;
   info: string;
   startedAt: string;
   completedAt?: string;
+  insertedIds?: {
+    categories: string[];
+    products: string[];
+    customers: string[];
+    orders: string[];
+  };
   summary?: {
     categories: number;
     products: number;
@@ -30,6 +36,17 @@ export class ImportService {
   private static instance: ImportService | null = null;
   private jobs: Map<string, ImportJob> = new Map();
   private tempDbPath = path.join(process.cwd(), 'backup_import_temp.sqlite');
+  
+  // Sequential Queue Processing Fields
+  private queue: string[] = [];
+  private isProcessingQueue = false;
+  private jobContexts: Map<string, {
+    orgId: string;
+    branchId: string;
+    userId: string;
+    supabaseClient: any;
+    storeDatabase: any;
+  }> = new Map();
 
   private constructor() {}
 
@@ -164,7 +181,7 @@ export class ImportService {
   }
 
   /**
-   * Start thread-safe async import migration task.
+   * Start thread-safe async import migration task, utilizing sequential Queue processing.
    */
   public startImport(
     orgId: string,
@@ -182,16 +199,154 @@ export class ImportService {
       id: jobId,
       status: 'pending',
       progress: 0,
-      info: 'جاري تهيئة خادم النقل المجمع...',
-      startedAt: new Date().toISOString()
+      info: 'مجدولة في طابور مهام الاستيراد (Queued)...',
+      startedAt: new Date().toISOString(),
+      insertedIds: {
+        categories: [],
+        products: [],
+        customers: [],
+        orders: []
+      }
     };
 
     this.jobs.set(jobId, job);
-
-    // Execute full sequence in background threads asynchronously
-    this.runImportPipeline(jobId, orgId, branchId, userId, supabaseClient, storeDatabase);
+    this.jobContexts.set(jobId, { orgId, branchId, userId, supabaseClient, storeDatabase });
+    
+    // Push into sequential processing queue
+    this.queue.push(jobId);
+    
+    // Fire background queue executor
+    this.processQueue();
 
     return jobId;
+  }
+
+  /**
+   * Sequential background queue processing handler
+   */
+  private async processQueue() {
+    if (this.isProcessingQueue) {
+      console.log('[ImportService] Queue is currently processing another job. Handshake postponed.');
+      return;
+    }
+
+    this.isProcessingQueue = true;
+
+    while (this.queue.length > 0) {
+      const jobId = this.queue[0]; // Peek next job
+      const ctx = this.jobContexts.get(jobId);
+
+      if (ctx) {
+        console.log(`[ImportService] Starting execution of Job: ${jobId} from Queue.`);
+        try {
+          await this.runImportPipeline(
+            jobId,
+            ctx.orgId,
+            ctx.branchId,
+            ctx.userId,
+            ctx.supabaseClient,
+            ctx.storeDatabase
+          );
+        } catch (err: any) {
+          console.error(`[ImportService] Job ${jobId} execution threw error:`, err.message);
+        } finally {
+          this.jobContexts.delete(jobId);
+        }
+      }
+
+      this.queue.shift(); // Remove job from queue
+    }
+
+    this.isProcessingQueue = false;
+  }
+
+  /**
+   * Action to rollback any successfully inserted records belonging to a job.
+   */
+  public async rollbackJob(jobId: string, supabaseClient: any, storeDatabase: any): Promise<any> {
+    const job = this.jobs.get(jobId);
+    if (!job) {
+      throw new Error('لم يتم العثور على أي مهمة استيراد تابعة لهذا المعرّف للتراجع.');
+    }
+
+    if (job.status === 'rolled_back') {
+      return { success: true, message: 'هذه العملية تم التراجع عنها مسبقاً.' };
+    }
+
+    const inserted = job.insertedIds;
+    if (!inserted) {
+      job.status = 'rolled_back';
+      job.info = 'لا توجد سجلات منشأة للتراجع عنها في الذاكرة.';
+      return { success: true, message: 'تم الانتهاء من التحديث (سجل المعرفات فارغ).' };
+    }
+
+    console.log(`[ImportService] Starting Rollback System for Job: ${jobId}`);
+    job.info = 'جاري سحب وحذف السجلات المدرجة وتصفير العلاقات تراجعياً...';
+
+    try {
+      // 1. Roll back orders
+      if (inserted.orders && inserted.orders.length > 0) {
+        if (supabaseClient) {
+          await supabaseClient.from('orders').delete().in('id', inserted.orders);
+        }
+        if (storeDatabase && storeDatabase.orders) {
+          storeDatabase.orders = storeDatabase.orders.filter(
+            (o: any) => !inserted.orders.includes(o.id)
+          );
+        }
+      }
+
+      // 2. Roll back customers
+      if (inserted.customers && inserted.customers.length > 0) {
+        if (supabaseClient) {
+          await supabaseClient.from('customers').delete().in('id', inserted.customers);
+        }
+        if (storeDatabase && storeDatabase.debts) {
+          storeDatabase.debts = storeDatabase.debts.filter(
+            (d: any) => !inserted.customers.includes(d.id)
+          );
+        }
+      }
+
+      // 3. Roll back products
+      if (inserted.products && inserted.products.length > 0) {
+        if (supabaseClient) {
+          await supabaseClient.from('products').delete().in('id', inserted.products);
+        }
+        if (storeDatabase && storeDatabase.products) {
+          storeDatabase.products = storeDatabase.products.filter(
+            (p: any) => !inserted.products.includes(p.id)
+          );
+        }
+      }
+
+      // 4. Roll back categories
+      if (inserted.categories && inserted.categories.length > 0) {
+        if (supabaseClient) {
+          await supabaseClient.from('categories').delete().in('id', inserted.categories);
+        }
+        if (storeDatabase && storeDatabase.categories) {
+          storeDatabase.categories = storeDatabase.categories.filter(
+            (c: any) => !inserted.categories.includes(c.id)
+          );
+        }
+      }
+
+      job.status = 'rolled_back';
+      job.progress = 100;
+      job.info = 'تم التراجع التام وإزاحة جميع السجلات المدرجة من قواعد البيانات وسيرفر التشغيل 🔴.';
+      job.completedAt = new Date().toISOString();
+
+      console.log(`[ImportService] Rollback completed for Job: ${jobId}`);
+      return {
+        success: true,
+        message: 'تم التراجع عن الاستيراد وحذف كافة السجلات المدرجة سحابياً ومحلياً بنجاح!'
+      };
+    } catch (err: any) {
+      console.error(`[ImportService] Rollback System failed for Job: ${jobId}`, err);
+      job.info = `فشل أثناء التراجع: ${err.message}`;
+      throw err;
+    }
   }
 
   /**
@@ -286,27 +441,59 @@ export class ImportService {
       job.progress = 70;
       job.info = 'جاري البدء بحفظ وتغذية قاعدة بيانات السحابية والذاكرة المحلية...';
 
+      // Initialize tracks registry
+      job.insertedIds = {
+        categories: [],
+        products: [],
+        customers: [],
+        orders: []
+      };
+
       // Load Sequence Batch-Wise
       const batchResults: BatchImportResult[] = [];
 
       // Load Categories
       const catBatch = await BatchImporter.importBatch('categories', transformedCategories, supabaseClient, storeDatabase);
       batchResults.push(catBatch);
+      if (catBatch.insertedCount > 0) {
+        const failedIds = new Set(catBatch.errors.map(e => String(e.recordId)));
+        job.insertedIds.categories = transformedCategories
+          .filter(c => !failedIds.has(String(c.id)))
+          .map(c => String(c.id));
+      }
 
       // Load Products
       job.progress = 80;
       const prodBatch = await BatchImporter.importBatch('products', transformedProducts, supabaseClient, storeDatabase);
       batchResults.push(prodBatch);
+      if (prodBatch.insertedCount > 0) {
+        const failedIds = new Set(prodBatch.errors.map(e => String(e.recordId)));
+        job.insertedIds.products = transformedProducts
+          .filter(p => !failedIds.has(String(p.id)))
+          .map(p => String(p.id));
+      }
 
       // Load Customers
       job.progress = 90;
       const custBatch = await BatchImporter.importBatch('customers', transformedCustomers, supabaseClient, storeDatabase);
       batchResults.push(custBatch);
+      if (custBatch.insertedCount > 0) {
+        const failedIds = new Set(custBatch.errors.map(e => String(e.recordId)));
+        job.insertedIds.customers = transformedCustomers
+          .filter(c => !failedIds.has(String(c.id)))
+          .map(c => String(c.id));
+      }
 
       // Load Orders
       job.progress = 95;
       const orderBatch = await BatchImporter.importBatch('orders', compiledOrders, supabaseClient, storeDatabase);
       batchResults.push(orderBatch);
+      if (orderBatch.insertedCount > 0) {
+        const failedIds = new Set(orderBatch.errors.map(e => String(e.recordId)));
+        job.insertedIds.orders = compiledOrders
+          .filter(o => !failedIds.has(String(o.id)))
+          .map(o => String(o.id));
+      }
 
       reader.close();
 
@@ -327,9 +514,18 @@ export class ImportService {
       console.log(`[ImportService] Pipeline job ${jobId} succeeded!`);
     } catch (err: any) {
       console.error(`[ImportService] Pipeline job failed for ${jobId}:`, err.message);
+      
+      // AUTO-ROLLBACK Trigger on critical pipe exception to uphold atomicity
+      console.log(`[ImportService] Critical pipeline interruption detected. Initiating AUTO-ROLLBACK for atomic guarantees...`);
+      try {
+        await this.rollbackJob(jobId, supabaseClient, storeDatabase);
+      } catch (rErr) {
+        console.error('[ImportService] AUTO-ROLLBACK failed:', rErr);
+      }
+
       job.status = 'failed';
       job.progress = 100;
-      job.info = `فشلت الهجرة: ${err.message}`;
+      job.info = `فشلت الهجرة وتراجعنا عنها لمنع الملفات المكسورة: ${err.message}`;
       job.completedAt = new Date().toISOString();
       job.errors = [{ severity: 'error', entity: 'process', message: err.message }];
     }

@@ -1122,14 +1122,15 @@ app.post('/api/staff/change-password', async (req, res) => {
 
     if (newPassword.length < 3) {
       let username = 'unknown';
-      const found = storeDatabase.staffUsers.find(s => s.id === staffId);
-      if (found) {
-        username = found.username;
-      } else if (supabase) {
+      if (supabase) {
         try {
-          const { data } = await supabase.from('staff_users').select('username').eq('id', staffId);
-          if (data && data.length > 0) username = data[0].username;
+          const { data } = await supabase.from('staff_users').select('username').eq('id', staffId).maybeSingle();
+          if (data) username = data.username;
         } catch (e) {}
+      }
+      if (username === 'unknown') {
+        const found = storeDatabase.staffUsers.find(s => s.id === staffId);
+        if (found) username = found.username;
       }
 
       await insertAuditLog(
@@ -1146,23 +1147,21 @@ app.post('/api/staff/change-password', async (req, res) => {
     }
 
     let staff: any = null;
-    let isCloudUser = false;
     let existingSecret: string | null = null;
 
-    // A. Try Supabase cloud lookup
+    // Direct cloud database fetch from staff_users
     if (supabase) {
       try {
         const { data, error } = await supabase
           .from('staff_users')
           .select('*')
-          .eq('id', staffId);
+          .eq('id', staffId)
+          .maybeSingle();
 
-        if (!error && data && data.length > 0) {
-          const matched = data[0];
-          existingSecret = matched.password_hash || matched.password || '';
+        if (!error && data) {
+          existingSecret = data.password_hash || data.password || '';
           if (verifyPassword(currentPassword, existingSecret)) {
-            staff = matched;
-            isCloudUser = true;
+            staff = data;
           }
         }
       } catch (err) {
@@ -1170,8 +1169,8 @@ app.post('/api/staff/change-password', async (req, res) => {
       }
     }
 
-    // B. Fallback to local in-memory lookup
-    if (!staff) {
+    // Local state fallback only if supabase not initialized/available
+    if (!staff && !supabase) {
       const localStaff = storeDatabase.staffUsers.find(s => s.id === staffId);
       if (localStaff) {
         existingSecret = localStaff.password_hash || getLocalDefaultPasswordForRole(localStaff.role);
@@ -1186,10 +1185,10 @@ app.post('/api/staff/change-password', async (req, res) => {
       let existingUsername = 'unknown';
       if (supabase) {
         try {
-          const { data } = await supabase.from('staff_users').select('id, username').eq('id', staffId);
-          if (data && data.length > 0) {
+          const { data } = await supabase.from('staff_users').select('id, username').eq('id', staffId).maybeSingle();
+          if (data) {
             userExists = true;
-            existingUsername = data[0].username;
+            existingUsername = data.username;
           }
         } catch (e) {}
       }
@@ -1201,45 +1200,31 @@ app.post('/api/staff/change-password', async (req, res) => {
         }
       }
 
-      if (userExists) {
-        await insertAuditLog(
-          'PASSWORD_CHANGE_FAILED',
-          existingUsername,
-          {
-            userId: staffId,
-            status: 'FAILED',
-            reason: 'incorrect_current_password',
-            timestamp: new Date().toISOString()
-          }
-        );
-        return res.status(400).json({ error: 'كلمة المرور الحالية غير صحيحة!' });
-      } else {
-        await insertAuditLog(
-          'PASSWORD_CHANGE_FAILED',
-          'unknown',
-          {
-            userId: staffId,
-            status: 'FAILED',
-            reason: 'user_not_found',
-            timestamp: new Date().toISOString()
-          }
-        );
-        return res.status(404).json({ error: 'الموظف المستهدف غير موجود في النظام!' });
-      }
+      await insertAuditLog(
+        'PASSWORD_CHANGE_FAILED',
+        existingUsername,
+        {
+          userId: staffId,
+          status: 'FAILED',
+          reason: 'incorrect_current_password',
+          timestamp: new Date().toISOString()
+        }
+      );
+      return res.status(400).json({ error: 'كلمة المرور الحالية غير صحيحة!' });
     }
 
     // Hash the new password securely
     const newHash = hashPassword(newPassword);
 
-    // Update staff_users in Supabase
-    if (isCloudUser && supabase) {
+    // Update staff_users directly in Supabase
+    if (supabase) {
       const { error: updateErr } = await supabase
         .from('staff_users')
         .update({
           password_hash: newHash,
           password: null
         })
-        .eq('id', staffId);
+        .eq('id', staff.id);
 
       if (updateErr) {
         console.error('[Supabase Update Password Error]', updateErr);
@@ -1255,28 +1240,37 @@ app.post('/api/staff/change-password', async (req, res) => {
         );
         return res.status(500).json({ error: `فشل تحديث البيانات في Supabase: ${updateErr.message}` });
       }
-    }
 
-    // Sync to local state
-    const localIdx = storeDatabase.staffUsers.findIndex(s => s.id === staffId);
-    if (localIdx !== -1) {
-      storeDatabase.staffUsers[localIdx].password_hash = newHash;
-    }
-
-    // Sync back to configurations
-    if (staff.role === 'ADMIN') {
-      storeDatabase.config.adminPassword = newPassword;
-    } else if (staff.role === 'CASHIER') {
-      storeDatabase.config.cashierPassword = newPassword;
-    } else if (staff.role === 'COMMUNICATIONS' || staff.role === 'STORE_MANAGER') {
-      storeDatabase.config.telecomPassword = newPassword;
-    }
-
-    if (supabase) {
+      // Sync to store_config in Supabase
       try {
-        await supabase.from('store_config').upsert({ id: 'single-row', ...storeDatabase.config });
+        const { data: configData } = await supabase.from('store_config').select('*').limit(1).maybeSingle();
+        let updatedConfig: any = configData || { id: 'single-row' };
+        if (staff.role === 'ADMIN') {
+          updatedConfig.adminPassword = newPassword;
+        } else if (staff.role === 'CASHIER') {
+          updatedConfig.cashierPassword = newPassword;
+        } else if (staff.role === 'COMMUNICATIONS' || staff.role === 'STORE_MANAGER') {
+          updatedConfig.telecomPassword = newPassword;
+        }
+        await supabase.from('store_config').upsert(updatedConfig);
+        
+        // Also sync local storeDatabase in-memory config for immediate UI visual alignment without hard reload
+        storeDatabase.config = { ...storeDatabase.config, ...updatedConfig };
       } catch (e) {
         console.error('[Supabase Post Config Sync Error during Password Change]', e);
+      }
+    } else {
+      // Offline fallback
+      const localIdx = storeDatabase.staffUsers.findIndex(s => s.id === staffId);
+      if (localIdx !== -1) {
+        storeDatabase.staffUsers[localIdx].password_hash = newHash;
+      }
+      if (staff.role === 'ADMIN') {
+        storeDatabase.config.adminPassword = newPassword;
+      } else if (staff.role === 'CASHIER') {
+        storeDatabase.config.cashierPassword = newPassword;
+      } else if (staff.role === 'COMMUNICATIONS' || staff.role === 'STORE_MANAGER') {
+        storeDatabase.config.telecomPassword = newPassword;
       }
     }
 
@@ -1284,12 +1278,12 @@ app.post('/api/staff/change-password', async (req, res) => {
     await insertAuditLog(
       'PASSWORD_CHANGED',
       staff.username,
-      { staffId, role: staff.role, source: isCloudUser ? 'SUPABASE_CLOUD' : 'FALLBACK_LOCAL_DB' }
+      { staffId, role: staff.role, source: supabase ? 'SUPABASE_CLOUD' : 'FALLBACK_LOCAL_DB' }
     );
 
     return res.json({
       success: true,
-      message: 'تم تغيير كلمة المرور بنجاح.'
+      message: 'تم تغيير كلمة المرور بنجاح وللأبد مباشرة في قاعدة البيانات.'
     });
 
   } catch (err: any) {
@@ -1802,6 +1796,85 @@ app.post('/api/import/start', async (req, res) => {
   } catch (err: any) {
     console.error('[Import API] Job start failed:', err.message);
     res.status(500).json({ error: err.message || 'فشل تشغيل محرك تحرير وهجرة السجلات.' });
+  }
+});
+
+// 4b. POST /api/import/start-from-storage - Downloads database from Supabase Storage, and launches async background ingest in chunks of 100
+app.post('/api/import/start-from-storage', async (req, res) => {
+  try {
+    const { fileUrl, orgId, branchId, operator } = req.body;
+    if (!fileUrl) {
+      return res.status(400).json({ error: 'يرجى تقديم رابط ملف النسخة الاحتياطية (fileUrl)!' });
+    }
+
+    const currentOrg = orgId || 'org_vip_dhibani';
+    const currentBranch = branchId || 'branch_01';
+    const currentOperator = operator || 'ADMIN';
+
+    console.log(`[Import API] Starting import from storage URL: ${fileUrl}`);
+
+    // Download the SQLite file from the URL
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      throw new Error(`تعذر تحميل الملف من الرابط المرفق: ${response.statusText}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Save the downloaded buffer locally on the server using ImportService
+    const service = ImportService.getInstance();
+    const uploadResult = await service.saveUpload(buffer);
+
+    // Now start the background ETL job
+    const jobId = service.startImport(
+      currentOrg,
+      currentBranch,
+      currentOperator,
+      supabase,       // server-side Supabase client reference
+      storeDatabase   // in-memory reactive database state definition
+    );
+
+    await insertAuditLog('DATA_MIGRATION_START_JOB_FROM_STORAGE', currentOperator, {
+      jobId,
+      orgId: currentOrg,
+      branchId: currentBranch,
+      fileSize: uploadResult.fileSize
+    });
+
+    res.json({
+      success: true,
+      jobId,
+      fileStats: uploadResult,
+      message: 'بدأت عملية التحويل والهجرة من التخزين السحابي في الخلفية بنجاح 🟢.'
+    });
+
+  } catch (err: any) {
+    console.error('[Import API] Start from storage failed:', err.message);
+    res.status(500).json({ error: err.message || 'فشل تشغيل عملية الاستيراد من التخزين السحابي.' });
+  }
+});
+
+// 4c. POST /api/import/rollback - Manual rollback of a specific import job
+app.post('/api/import/rollback', async (req, res) => {
+  try {
+    const { jobId, operator } = req.body;
+    if (!jobId) {
+      return res.status(400).json({ error: 'من فضلك أرسل الـ jobId للتراجع عن الاستيراد.' });
+    }
+
+    const service = ImportService.getInstance();
+    const result = await service.rollbackJob(jobId, supabase, storeDatabase);
+
+    await insertAuditLog('DATA_MIGRATION_ROLLBACK_JOB', operator || 'ADMIN', {
+      jobId,
+      status: 'ROLLED_BACK'
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error('[Import API] Rollback failed:', err.message);
+    res.status(500).json({ error: err.message || 'فشلت عملية التراجع عن الاستيراد.' });
   }
 });
 

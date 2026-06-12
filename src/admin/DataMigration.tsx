@@ -4,6 +4,7 @@ import {
   ChevronRight, Info, FileJson, Users, ShoppingBag, Boxes, 
   Layers, Settings2, Activity, XCircle, ArrowRight
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 interface DataMigrationProps {
   language?: 'AR' | 'EN';
@@ -40,11 +41,69 @@ export default function DataMigration({ language = 'AR' }: DataMigrationProps) {
   const [jobInfo, setJobInfo] = useState<string>('');
   const [jobReport, setJobReport] = useState<any | null>(null);
 
+  // Supabase live status diagnostics hook
+  const [dbStatus, setDbStatus] = useState<{
+    supabaseInitialized: boolean;
+    supabaseResponseOk: boolean;
+    tables: Record<string, string>;
+    supabaseError?: string;
+  } | null>(null);
+  const [isCheckingDb, setIsCheckingDb] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<any>(null);
 
-  // Cleanup effect
+  const [isRollingBack, setIsRollingBack] = useState(false);
+
+  const triggerRollback = async () => {
+    if (!jobId) return;
+    if (!window.confirm(language === 'AR' ? 'هل أنت متأكد من رغبتك في حذف كافة السجلات التي تم استيرادها في هذه العملية؟' : 'Are you sure you want to delete all imported records from this operation?')) {
+      return;
+    }
+    
+    setIsRollingBack(true);
+    setUploadError(null);
+    try {
+      const response = await fetch('/api/import/rollback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId, operator: 'SUPER_ADMIN' })
+      });
+      
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'فشلت عملية التراجع.');
+      }
+      
+      const resData = await response.json();
+      // Fetch latest job report to reflect rolled_back status
+      await fetchFinalReport(jobId);
+    } catch (err: any) {
+      setUploadError(err.message || 'خطأ أثناء التراجع عن عملية الاستيراد.');
+    } finally {
+      setIsRollingBack(false);
+    }
+  };
+
+  // Status check logic
+  const checkSupabaseConnectivity = async () => {
+    setIsCheckingDb(true);
+    try {
+      const res = await fetch('/api/diagnostics');
+      if (res.ok) {
+        const data = await res.json();
+        setDbStatus(data);
+      }
+    } catch (e) {
+      console.error('Failed to probe Supabase diagnostics:', e);
+    } finally {
+      setIsCheckingDb(false);
+    }
+  };
+
+  // Cleanup and initial hooks
   useEffect(() => {
+    checkSupabaseConnectivity();
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
@@ -108,39 +167,76 @@ export default function DataMigration({ language = 'AR' }: DataMigrationProps) {
     if (!file) return;
     setIsUploading(true);
     setUploadError(null);
+    setUploadSuccess(false);
     
     try {
-      // Direct stream or Base64 block upload sequence
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => {
-          const result = reader.result as string;
-          const base64 = result.split(',')[1];
-          resolve(base64);
-        };
-        reader.onerror = (err) => reject(err);
-      });
-      reader.readAsDataURL(file);
-      const fileBase64 = await base64Promise;
+      // 1. Create drafts storage bucket safely if not existing
+      try {
+        await supabase.storage.createBucket('backups', { public: true });
+      } catch (bucketErr) {
+        console.warn('Bucket backup creation ignored/already exists:', bucketErr);
+      }
 
-      const response = await fetch('/api/import/upload', {
+      // 2. Upload SQLite file directly to backups/ bucket in Supabase Storage
+      const fileExt = file.name.split('.').pop() || 'sqlite';
+      const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}.${fileExt}`;
+      
+      const { data: uploadData, error: uploadErr } = await supabase.storage
+        .from('backups')
+        .upload(uniqueFileName, file, { cacheControl: '3600', upsert: true });
+
+      if (uploadErr) {
+        throw new Error(`تعذر رفع الملف إلى Supabase Storage: ${uploadErr.message}`);
+      }
+
+      // 3. Obtain the public URL
+      const { data: urlData } = supabase.storage
+        .from('backups')
+        .getPublicUrl(uniqueFileName);
+
+      const fileUrl = urlData?.publicUrl;
+      if (!fileUrl) {
+        throw new Error('فشل الحصول على الرابط العام للملف المرفوع.');
+      }
+
+      console.log('File uploaded to storage URL:', fileUrl);
+      setUploadSuccess(true);
+
+      // 4. Send layout context and start-from-storage background job to Backend
+      setIsImporting(true);
+      setJobStatus('pending');
+      setJobProgress(0);
+      setJobInfo('تم الرفع للـ Bucket. جاري إطلاق ترحيل وتحويل البيانات تلقائياً على السيرفر...');
+
+      const response = await fetch('/api/import/start-from-storage', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ fileBase64, operator: 'SYSTEM_ADMIN' })
+        body: JSON.stringify({
+          fileUrl,
+          orgId,
+          branchId,
+          operator: 'SUPER_ADMIN'
+        })
       });
 
       if (!response.ok) {
         const errJson = await response.json();
-        throw new Error(errJson.error || 'فشل رفع الملف إلى الخادم.');
+        throw new Error(errJson.error || 'فشل تشغيل عملية الاستيراد من السيرفر.');
       }
 
       const resData = await response.json();
-      setFileStats(resData);
-      setUploadSuccess(true);
+      setFileStats(resData.fileStats);
+      setJobId(resData.jobId);
+      
+      // Start polling status in real-time
+      startPolling(resData.jobId);
+
     } catch (err: any) {
-      setUploadError(err.message || 'فشل الاتصال ميكانيكياً بالخادم لرفع الملف.');
+      setUploadError(err.message || 'فشل الاتصال ميكانيكياً للخادم لرفع وبدء ترحيل السجلات.');
+      setIsImporting(false);
+      setJobStatus('failed');
     } finally {
       setIsUploading(false);
     }
@@ -277,7 +373,27 @@ export default function DataMigration({ language = 'AR' }: DataMigrationProps) {
         </div>
         
         {/* Indicators */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {dbStatus ? (
+            <button 
+              onClick={checkSupabaseConnectivity}
+              disabled={isCheckingDb}
+              className={`px-3 py-1 flex items-center gap-1.5 border rounded-full text-[10px] font-black transition-all ${
+                dbStatus.supabaseResponseOk 
+                  ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800 hover:bg-emerald-900/20' 
+                  : 'bg-rose-950/40 text-rose-400 border-rose-800 hover:bg-rose-900/20'
+              }`}
+              title="انقر لإعادة فحص الاتصال بقاعدة البيانات"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${dbStatus.supabaseResponseOk ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400 animate-ping'}`} />
+              {dbStatus.supabaseResponseOk ? 'قناة Supabase نشطة ⚡' : 'وضع الاتصال المحلي المبرمج ⚠️'}
+            </button>
+          ) : (
+            <span className="px-3 py-1 bg-slate-950/40 text-slate-400 border border-slate-805 rounded-full text-[10px] font-black flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin text-cyan-400" />
+              جاري اختبار قناة سوبابيس...
+            </span>
+          )}
           <span className="px-3 py-1 bg-cyan-950/40 text-cyan-400 border border-cyan-800/50 rounded-full text-[10px] font-black font-mono">
             V2.0 STABLE ENGINE
           </span>
@@ -291,45 +407,99 @@ export default function DataMigration({ language = 'AR' }: DataMigrationProps) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Core Integration settings */}
-        <div className="bg-slate-950/60 p-5 rounded-xl border border-slate-800/80 space-y-4">
-          <h2 className="text-sm font-black text-slate-300 flex items-center gap-2 pb-2 border-b border-slate-800">
-            <Settings2 className="w-4 h-4 text-cyan-400" />
-            تكوين معايير الأمان والهوية (Context Injector)
-          </h2>
-          
-          <div className="space-y-3">
-            <div>
-              <label className="block text-[11px] text-slate-400 font-bold mb-1">
-                رقم هوية المنظمة الحالية (Organization UUID)
-              </label>
-              <input 
-                type="text" 
-                value={orgId} 
-                onChange={(e) => setOrgId(e.target.value)}
-                disabled={isImporting}
-                className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-xs font-mono text-cyan-300 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-              />
-            </div>
+        <div className="bg-slate-950/60 p-5 rounded-xl border border-slate-800/40 space-y-5">
+          <div className="space-y-4">
+            <h2 className="text-sm font-black text-slate-300 flex items-center gap-2 pb-2 border-b border-slate-800">
+              <Settings2 className="w-4 h-4 text-cyan-400" />
+              تكوين معايير الأمان والهوية (Context Injector)
+            </h2>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[11px] text-slate-400 font-bold mb-1">
+                  رقم هوية المنظمة الحالية (Organization UUID)
+                </label>
+                <input 
+                  type="text" 
+                  value={orgId} 
+                  onChange={(e) => setOrgId(e.target.value)}
+                  disabled={isImporting}
+                  className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-xs font-mono text-cyan-300 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                />
+              </div>
 
-            <div>
-              <label className="block text-[11px] text-slate-400 font-bold mb-1">
-                رمز تعريف الفرع المستهدف (Branch Identifier)
-              </label>
-              <input 
-                type="text" 
-                value={branchId} 
-                onChange={(e) => setBranchId(e.target.value)}
-                disabled={isImporting}
-                className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-xs font-mono text-slate-300 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-              />
-            </div>
+              <div>
+                <label className="block text-[11px] text-slate-400 font-bold mb-1">
+                  رمز تعريف الفرع المستهدف (Branch Identifier)
+                </label>
+                <input 
+                  type="text" 
+                  value={branchId} 
+                  onChange={(e) => setBranchId(e.target.value)}
+                  disabled={isImporting}
+                  className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-xs font-mono text-slate-300 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                />
+              </div>
 
-            <div className="p-3 bg-cyan-950/10 border border-cyan-900/20 rounded-lg text-[10px] text-cyan-400/80 leading-relaxed flex items-start gap-2">
-              <Info className="w-4 h-4 text-cyan-500 shrink-0 mt-0.5" />
-              <span>
-                يقوم المحرك آلياً بحقن معرّفات الهوية هذه في كل المنتجات والعملاء والطلبيات الواردة، مما يحمي الخادم من أي تسريبات للمستأجرين المتعددين (Tenant Isolation Enforcement).
-              </span>
+              <div className="p-3 bg-cyan-950/10 border border-cyan-900/20 rounded-lg text-[10px] text-cyan-400/80 leading-relaxed flex items-start gap-2">
+                <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                <span>
+                  يقوم المحرك آلياً بحقن معرّفات الهوية هذه في كل المنتجات والعملاء والطلبيات الواردة، مما يحمي الخادم من أي تسريبات للمستأجرين المتعددين (Tenant Isolation Enforcement).
+                </span>
+              </div>
             </div>
+          </div>
+
+          {/* Database Diagnostics Checklist Panel */}
+          <div className="pt-4 border-t border-slate-800/80">
+            <h3 className="text-xs font-bold text-slate-300 flex items-center gap-2 mb-3">
+              <Database className="w-3.5 h-3.5 text-cyan-400" />
+              مطابقة قنوات الارتباط السحابية (Supabase Live Link)
+            </h3>
+
+            {dbStatus ? (
+              <div className="space-y-2.5">
+                <div className="p-2.5 bg-slate-900 rounded-lg border border-slate-800 text-[11px]">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-slate-400 font-bold">بوابة سوبابيس (Supabase Gateway)</span>
+                    <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${dbStatus.supabaseInitialized ? 'bg-emerald-950/50 text-emerald-400' : 'bg-rose-950/50 text-rose-450'}`}>
+                      {dbStatus.supabaseInitialized ? 'مُعدّة ومكتملة' : 'لم تُهجر بعد'}
+                    </span>
+                  </div>
+                  <div className="text-[9.5px] text-slate-500 truncate font-mono">{dbStatus.details?.supabaseUrl}</div>
+                </div>
+
+                <div className="space-y-1.5 p-2 bg-slate-900/40 rounded-lg border border-slate-850">
+                  <div className="text-[10px] text-slate-400 font-bold mb-1 px-1">سلامة فهارس الجداول السحابية:</div>
+                  {Object.entries(dbStatus.tables || {}).map(([table, result]) => (
+                    <div key={table} className="flex justify-between items-center text-[10px] py-0.5 px-1 font-mono">
+                      <span className="text-slate-450">{table}</span>
+                      <span className="font-bold text-slate-350">{result}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={checkSupabaseConnectivity}
+                  disabled={isCheckingDb}
+                  className="w-full py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600 rounded text-[10px] font-black transition-all flex items-center justify-center gap-1"
+                >
+                  {isCheckingDb ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      جاري فحص سلامة الديجيتال...
+                    </>
+                  ) : (
+                    'تحديث واختبار توافق البيانات السحابية 🔄'
+                  )}
+                </button>
+              </div>
+            ) : (
+              <div className="p-4 text-center bg-slate-900/30 border border-slate-850 rounded-lg text-slate-500 text-[10px]">
+                <Loader2 className="w-4 h-4 animate-spin mx-auto mb-2 text-cyan-400" />
+                جاري تتبع قنوات الإرسال وتأمين قواعد البيانات...
+              </div>
+            )}
           </div>
         </div>
 
@@ -689,17 +859,33 @@ export default function DataMigration({ language = 'AR' }: DataMigrationProps) {
       )}
 
       {/* Final Job Report Summary Dashboard */}
-      {jobReport && jobReport.status === 'success' && (
-        <div className="bg-gradient-to-br from-emerald-950/20 to-teal-950/10 p-6 rounded-xl border border-emerald-900/30 space-y-4">
+      {jobReport && (jobReport.status === 'success' || jobReport.status === 'rolled_back') && (
+        <div className={`p-6 rounded-xl border space-y-4 ${
+          jobReport.status === 'rolled_back'
+            ? 'bg-rose-950/20 border-rose-900/30'
+            : 'bg-gradient-to-br from-emerald-950/20 to-teal-950/10 border-emerald-900/30'
+        }`}>
           <div className="flex items-center gap-3">
-            <CheckCircle2 className="w-8 h-8 text-emerald-400 shrink-0" />
+            {jobReport.status === 'rolled_back' ? (
+              <XCircle className="w-8 h-8 text-rose-500 shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-8 h-8 text-emerald-400 shrink-0" />
+            )}
             <div>
-              <h2 className="text-base font-black text-emerald-400 leading-snug">اكتملت عملية ترحيل قواعد البيانات بنجاح تام!</h2>
-              <p className="text-[11px] text-slate-400">تم فك شفرة قاعدة البيانات القديمة، دمج الجداول، معالجة العلاقات، وحقن فهارس الأمان متعدد الموظفين بنجاح 100%.</p>
+              <h2 className={`text-base font-black leading-snug ${jobReport.status === 'rolled_back' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {jobReport.status === 'rolled_back' 
+                  ? 'تم التراجع عن عملية ترحيل قواعد البيانات!' 
+                  : 'اكتملت عملية ترحيل قواعد البيانات بنجاح تام!'}
+              </h2>
+              <p className="text-[11px] text-slate-400">
+                {jobReport.status === 'rolled_back'
+                  ? 'تم التراجع وسحب جميع السجلات المجدولة المدرجة وتنظيف قواعد البيانات بنجاح لمنع أي تداخل.'
+                  : 'تم فك شفرة قاعدة البيانات القديمة، دمج الجداول، معالجة العلاقات، وحقن فهارس الأمان متعدد الموظفين بنجاح 100%.'}
+              </p>
             </div>
           </div>
 
-          {jobReport.summary && (
+          {jobReport.status !== 'rolled_back' && jobReport.summary && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-3 border-t border-emerald-950/50">
               <div className="p-3.5 bg-slate-900/80 rounded-lg border border-slate-850/60">
                 <span className="block text-[10px] text-slate-500 font-bold">الفئات المستوردة</span>
@@ -723,10 +909,30 @@ export default function DataMigration({ language = 'AR' }: DataMigrationProps) {
             </div>
           )}
 
-          <div className="flex justify-end pt-2">
+          <div className="flex justify-end gap-3 pt-2">
+            {jobReport.status === 'success' && (
+              <button
+                onClick={triggerRollback}
+                disabled={isRollingBack}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white border border-rose-700 font-black text-xs rounded-lg shadow-lg flex items-center gap-1.5 transition-all disabled:opacity-50"
+              >
+                {isRollingBack ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    جاري التراجع وسحب السجلات...
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="w-3.5 h-3.5 text-rose-200" />
+                    تراجع وسحب كافة البيانات المدرجة (Rollback) 🔴
+                  </>
+                )}
+              </button>
+            )}
+
             <button
               onClick={() => window.location.reload()}
-              className="px-5 py-2 bg-emerald-500 hover:bg-emerald-450 text-slate-950 font-black text-xs rounded-lg shadow"
+              className="px-5 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white border border-slate-700 hover:border-slate-600 font-black text-xs rounded-lg shadow"
             >
               إعادة تحميل لوحة التحكم لمشاهدة البيانات المستوردة 🔄
             </button>

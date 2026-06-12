@@ -9,7 +9,8 @@ import {
   Building, ShieldCheck, Users, Box, TrendingUp, AlertCircle, Edit3, Save, 
   Handshake, DollarSign, ListOrdered, ToggleLeft, ToggleRight, Check, CheckCircle2, RefreshCw,
   Plus, Trash2, Sparkles, Search, ClipboardList, Clock, Truck, X, FileText, Phone, User, HelpCircle, Layers, Printer,
-  Wifi, Cloud, Cpu, Database, Link, Bot, MapPin, Terminal, Key, Sliders
+  Wifi, Cloud, Cpu, Database, Link, Bot, MapPin, Terminal, Key, Sliders,
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Menu, Settings, Activity, FileSpreadsheet, UserCheck, Bell, Lock
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell 
@@ -53,6 +54,39 @@ export default function Dashboard({
 }: DashboardProps) {
   // Tabs: 'ANALYTICS' | 'SETTINGS' | 'INVENTORY' | 'STAFF' | 'DEBTS' | 'ORDERS' | 'CATEGORIES' | 'AI_CHAT' | 'DEVELOPER_PLATFORM' | 'CHANGE_PASSWORD' | 'DATA_MIGRATION'
   const [activeTab, setActiveTab ] = useState<'ANALYTICS' | 'SETTINGS' | 'INVENTORY' | 'STAFF' | 'DEBTS' | 'ORDERS' | 'CATEGORIES' | 'AI_CHAT' | 'DEVELOPER_PLATFORM' | 'CHANGE_PASSWORD' | 'DATA_MIGRATION'>('ANALYTICS');
+
+  // Modern UI/UX Layout states (AppShell Sidebar accordion)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('aldhibani_sidebar_collapsed') === 'true';
+  });
+  const [openSubmenus, setOpenSubmenus] = useState<Record<string, boolean>>({
+    dashboard: true,
+    sales: false,
+    inventory: false,
+    finance: false,
+    ai: false,
+    etl: false,
+    staff: false,
+    settings: false,
+  });
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [globalSearchTerm, setGlobalSearchTerm] = useState('');
+
+  const toggleSidebarCollapse = () => {
+    setIsSidebarCollapsed(prev => {
+      const target = !prev;
+      localStorage.setItem('aldhibani_sidebar_collapsed', String(target));
+      return target;
+    });
+  };
+
+  const toggleSubmenu = (menu: string) => {
+    setOpenSubmenus(prev => ({
+      ...prev,
+      [menu]: !prev[menu]
+    }));
+  };
 
   // Developer System Generator dynamic entries representing spawned systems
   const [generatedSystems, setGeneratedSystems] = useState<any[]>([
@@ -2354,339 +2388,934 @@ export default function Dashboard({
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex font-sans">
+    <div dir={language === 'AR' ? 'rtl' : 'ltr'} className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row font-sans antialiased overflow-x-hidden selection:bg-cyan-500 selection:text-slate-950">
       
-      {/* Dynamic Left Sidebar Menu Dashboard Toggling */}
-      <aside className="w-64 bg-slate-900 border-r border-slate-800 p-5 flex flex-col justify-between hidden md:flex">
-        <div className="flex flex-col gap-6">
-          <div className="flex items-center gap-2.5 pb-4 border-b border-slate-850">
-            <div className="w-8 h-8 rounded-lg bg-orange-500 text-slate-950 flex items-center justify-center font-bold">
-              🛡️
-            </div>
-            <div>
-              <span className="block font-black text-sm text-white uppercase tracking-wider">{currentUser.username}</span>
-              <span className="text-[10px] text-amber-500 font-bold uppercase tracking-widest leading-none">
-                {currentUser.role} {language === 'AR' ? 'موثق' : 'VERIFIED'}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] text-slate-550 uppercase tracking-widest font-mono font-bold mb-1 px-3">NAVIGATION CONTROL</span>
-            
-            {/* GO BACK TO STOREFRONT DIRECTLY (SOLVES DESKTOP BLOCKING ISSUE) */}
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-2.5 rounded-xl text-xs font-black flex items-center gap-2.5 transition-all cursor-pointer bg-gradient-to-r from-amber-500/20 to-yellow-500/5 text-amber-400 border border-amber-500/30 hover:border-amber-400 hover:text-white select-none mb-3 shadow-[0_4px_12px_rgba(251,191,36,0.06)] w-full text-right"
-            >
-              <span className="text-sm">🛒</span>
-              <span>{language === 'AR' ? 'المعرض والتسوق كزبون/موظف' : 'Sales Catalog Storefront'}</span>
-            </button>
-
-            {/* TAB SELECTORS */}
-            <button
-              onClick={() => setActiveTab('ANALYTICS')}
-              className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                activeTab === 'ANALYTICS' ? 'bg-cyan-500 text-slate-950 font-black shadow-lg shadow-cyan-950/20' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
-              }`}
-            >
-              <TrendingUp className="w-4.5 h-4.5" />
-              <span>{language === 'AR' ? 'التقارير والإحصائيات' : 'Commercial Analytics'}</span>
-            </button>
-
-            {isAdmin && (
-              <button
-                onClick={() => setActiveTab('SETTINGS')}
-                className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                  activeTab === 'SETTINGS' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
-                }`}
-              >
-                <Building className="w-4.5 h-4.5" />
-                <span>{language === 'AR' ? 'إعدادات متجر الطيب' : 'Store Configuration'}</span>
-              </button>
-            )}
-
-            {(isAdmin || pCheck.editInventory) && (
-              <button
-                onClick={() => setActiveTab('INVENTORY')}
-                className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                  activeTab === 'INVENTORY' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
-                }`}
-              >
-                <Box className="w-4.5 h-4.5" />
-                <span>{language === 'AR' ? 'جرد وإدارة المخزون' : 'Inventory Manager'}</span>
-              </button>
-            )}
-
-            {isAdmin && (
-              <button
-                onClick={() => setActiveTab('STAFF')}
-                className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                  activeTab === 'STAFF' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
-                }`}
-              >
-                <Users className="w-4.5 h-4.5" />
-                <span>{language === 'AR' ? 'مصفوفة صلاحيات الموظفين' : 'Staff Matrix privileges'}</span>
-              </button>
-            )}
-
-            {(isAdmin || pCheck.viewSales) && (
-              <button
-                onClick={() => setActiveTab('DEBTS')}
-                className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                  activeTab === 'DEBTS' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
-                }`}
-              >
-                <Handshake className="w-4.5 h-4.5" />
-                <span>{language === 'AR' ? 'مراقبة ومتابعة الديون آجل' : 'Outstanding Client Debts'}</span>
-              </button>
-            )}
-
-            {(isAdmin || pCheck.viewSales || pCheck.viewRecharges) && (
-              <button
-                onClick={() => setActiveTab('ORDERS')}
-                className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                  activeTab === 'ORDERS' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
-                }`}
-              >
-                <ListOrdered className="w-4.5 h-4.5" />
-                <span>{language === 'AR' ? 'طلبات الزبائن الفورية' : 'Active Client Orders'}</span>
-              </button>
-            )}
-
-            {/* Desktop Admin navigation */}
-
-            <button
-              onClick={() => setActiveTab('AI_CHAT')}
-              className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                activeTab === 'AI_CHAT' ? 'bg-cyan-500 text-slate-950 font-black shadow-lg shadow-cyan-950/20' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
-              }`}
-            >
-              <Bot className="w-4.5 h-4.5 text-fuchsia-400" />
-              <span>{language === 'AR' ? 'مساعد الأعمال الذكي' : 'BI AI Intelligence'}</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('CHANGE_PASSWORD')}
-              className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                activeTab === 'CHANGE_PASSWORD' ? 'bg-cyan-500 text-slate-950 font-black shadow-lg shadow-cyan-950/20' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
-              }`}
-            >
-              <Key className="w-4.5 h-4.5 text-amber-500" />
-              <span>{language === 'AR' ? 'تغيير كلمتي السرية' : 'Change My Password'}</span>
-            </button>
-
-            {isAdmin && (
-              <button
-                onClick={() => setActiveTab('DATA_MIGRATION')}
-                className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                  activeTab === 'DATA_MIGRATION' ? 'bg-cyan-500 text-slate-950 font-black shadow-lg shadow-cyan-950/20' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
-                }`}
-              >
-                <Database className="w-4.5 h-4.5 text-cyan-400" />
-                <span>{language === 'AR' ? 'استيراد وترحيل البيانات' : 'SQLite Data Migration'}</span>
-              </button>
-            )}
-
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <button
-            onClick={refreshAllData}
-            disabled={loading}
-            className="w-full py-2 bg-slate-950 border border-slate-800 rounded-xl text-[10px] text-cyan-400 font-mono flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>MAPPED DATABASE REFRESH</span>
-          </button>
-          <span className="text-[9px] text-slate-6 text-center select-none opacity-40">STORE_ROUTER SECURITY ENGINE</span>
-        </div>
-      </aside>
-
-      {/* Main Panel Content Area */}
-      <main className="flex-1 p-6 md:p-8 space-y-6 overflow-y-auto">
-        
-        {/* Elegant Unified Header for Al-Dheebani VIP Store & Warehouse */}
-        <div className="bg-gradient-to-r from-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-5 flex flex-col lg:flex-row items-center justify-between gap-4 shadow-xl" dir="rtl">
-          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+      {/* SaaS Sidebar Desktop (Collapsible & Responsive) */}
+      <aside 
+        className={`bg-slate-900 border-r border-slate-800 flex flex-col justify-between hidden md:flex transition-all duration-300 relative z-20 ${
+          isSidebarCollapsed ? 'w-20' : 'w-72'
+        }`}
+      >
+        <div className="flex flex-col gap-6 overflow-y-auto overflow-x-hidden grow h-full py-5 px-4 scrollbar-thin">
+          
+          {/* Brand Logo Header */}
+          <div className="flex items-center justify-between pb-4 border-b border-slate-800">
             <div className="flex items-center gap-3">
-              <span className="text-2xl">🦁</span>
-              <div className="text-right">
-                <h2 className="text-sm font-black text-white tracking-wide">
-                  {language === 'AR' ? 'مجموعة ومستودعات الذيباني VIP التجارية' : 'Aldhibani VIP Commercial Hub'}
-                </h2>
-                <p className="text-[10px] text-slate-400 font-mono">Sanaa Main Warehouse Pipeline (Live)</p>
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 text-slate-950 flex items-center justify-center text-lg font-black shrink-0 shadow-lg shadow-cyan-500/10">
+                💎
               </div>
+              {!isSidebarCollapsed && (
+                <div className="flex flex-col truncate leading-tight">
+                  <span className="font-extrabold text-sm text-white tracking-wide uppercase">Smart Store VIP</span>
+                  <span className="text-[9px] text-cyan-400 font-mono tracking-widest leading-none">V2.8 SAAS DIRECT</span>
+                </div>
+              )}
             </div>
-            
-            <div className="flex items-center gap-2 mr-0 md:mr-3">
-              <span className="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase bg-[#facc15]/10 text-amber-400 border border-amber-500/15">
-                {language === 'AR' ? 'النظام الرئيسي' : 'MAIN SYSTEM'}
-              </span>
-              <span className="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/15 animate-pulse">
-                🟢 {language === 'AR' ? 'مستقر' : 'STABLE'}
-              </span>
-            </div>
+            {!isSidebarCollapsed && (
+              <button 
+                onClick={toggleSidebarCollapse}
+                className="p-1 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-white transition-all cursor-pointer"
+                title={language === 'AR' ? 'طي القائمة' : 'Collapse Sidebar'}
+              >
+                <ChevronLeft className={`w-4 h-4 ${language === 'AR' ? 'rotate-180' : ''}`} />
+              </button>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-start lg:justify-end">
-            {/* Quick role display based on login */}
-            <div className="bg-slate-950 border border-slate-850 px-3.5 py-2 rounded-xl text-[10px] text-slate-400 font-bold flex items-center gap-1.5">
-              <span>👤</span>
-              <span>{language === 'AR' ? 'مذخر ومعالج النظام:' : 'Active Operator:'}</span>
-              <span className="text-cyan-400 font-mono font-extrabold font-bold">abdulkrem065@gmail.com</span>
-              <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-400 text-[8px] rounded border border-amber-500/30 uppercase font-black">{currentUser.role}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Dynamic Warning & Quick-Return Notice Bar (Answers both mobile & desktop blocking issues) */}
-        <div className="bg-gradient-to-r from-amber-500/10 via-amber-600/5 to-transparent border border-amber-500/20 rounded-3xl p-4 md:p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-md animate-fadeIn" dir="rtl">
-          <div className="space-y-1">
-            <h3 className="text-xs md:text-sm font-black text-amber-400 flex items-center gap-2">
-              <span>⚠️</span>
-              <span>بوابات الإدارة والتشغيل لمستودع ومتجر الذيباني</span>
-            </h3>
-            <p className="text-[10px] md:text-xs text-slate-405 leading-relaxed">
-              الشاشة تفاعلية وليست محجوبة! للتنقل وعرض المنتجات أو شحن رصيد كزبون، اضغط على الزر الذهبي للرجوع إلى المعرض المعروض والطلب الفوري دون تسجيل الخروج.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-2xl bg-gradient-to-r from-amber-400 to-[#facc15] hover:from-amber-350 hover:to-[#facc15]/90 text-slate-950 text-xs font-black flex items-center gap-2 transition-all cursor-pointer shadow-md select-none shrink-0"
-          >
-            <span>🛒</span>
-            <span>الذهاب لعرض المنتجات والتسوق</span>
-          </button>
-        </div>
-
-        {/* Mobile menu and indicator */}
-        <div className="flex md:hidden items-center justify-between overflow-x-auto bg-slate-900 border border-slate-850 p-2.5 rounded-2xl gap-2 scrollbar-none mb-4" dir="rtl">
-          <button 
-            type="button"
-            onClick={onClose} 
-            className="px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 flex items-center gap-1 shadow font-bold"
-          >
-            <span>🛒</span>
-            <span>معرض التسوق</span>
-          </button>
-          <button onClick={() => setActiveTab('ANALYTICS')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 ${activeTab === 'ANALYTICS' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'}`}>التحليلات</button>
-          {isAdmin && <button onClick={() => setActiveTab('SETTINGS')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 ${activeTab === 'SETTINGS' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'}`}>الإعدادات</button>}
-          {(isAdmin || pCheck.editInventory) && <button onClick={() => setActiveTab('INVENTORY')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 ${activeTab === 'INVENTORY' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'}`}>المخزون</button>}
-          {isAdmin && <button onClick={() => setActiveTab('STAFF')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 ${activeTab === 'STAFF' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'}`}>الصلاحيات</button>}
-          {(isAdmin || pCheck.viewSales) && <button onClick={() => setActiveTab('DEBTS')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 ${activeTab === 'DEBTS' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'}`}>الديون</button>}
-          <button onClick={() => setActiveTab('ORDERS')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 ${activeTab === 'ORDERS' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'}`}>الطلبات</button>
-
-          <button onClick={() => setActiveTab('CHANGE_PASSWORD')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 ${activeTab === 'CHANGE_PASSWORD' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'}`}>تغيير كلمة المرور</button>
-
-          <button onClick={() => setActiveTab('AI_CHAT')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black shrink-0 ${activeTab === 'AI_CHAT' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400'}`}>المساعد الذكي</button>
-        </div>
-
-        {/* Remote Sync Status Bar (Cloud Alternative to AnyDesk) */}
-        <div className="bg-slate-900 border border-slate-850 p-4.5 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl animate-fadeIn" dir="rtl">
-          <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-2xl ${
-              (config.remoteSyncStatus || 'CONNECTED') === 'CONNECTED'
-                ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-500/20'
-                : 'bg-amber-950/85 text-amber-400 border border-amber-500/20 animate-pulse'
-            }`}>
-              <Wifi className="w-5 h-5" />
-            </div>
-            <div className="space-y-0.5 text-right">
-              <span className="text-[10px] text-slate-500 font-black tracking-widest uppercase block font-mono">
-                {language === 'AR' ? 'البديل السحابي التلقائي للأني ديسك (AnyDesk Cloud-Pipeline Alternative)' : 'COMPATIBLE CLOUD pipeline (AnyDesk Alternative)'}
-              </span>
-              <div className="flex items-center gap-2">
-                <h4 className="text-xs font-extrabold text-white">
-                  {language === 'AR' ? 'حالة ربط المحاسب والذمم المباشرة:' : 'Live Accountant Ledger Link:'}
-                </h4>
-                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
-                  (config.remoteSyncStatus || 'CONNECTED') === 'CONNECTED'
-                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10'
-                    : 'bg-amber-500/10 text-amber-400 border border-amber-500/10 animate-pulse'
-                }`}>
-                  {(config.remoteSyncStatus || 'CONNECTED') === 'CONNECTED'
-                    ? (language === 'AR' ? '🟢 متصل ومستقر' : 'Stable') 
-                    : (language === 'AR' ? '⚡ جاري المزامنة...' : 'Syncing...')}
+          {/* User Profile Info Summary */}
+          {!isSidebarCollapsed ? (
+            <div className="p-3.5 bg-slate-950 border border-slate-850 rounded-2xl flex items-center gap-3 shadow-md">
+              <div className="w-9 h-9 rounded-full bg-cyan-950 text-cyan-400 flex items-center justify-center font-bold font-mono">
+                {currentUser.username.substring(0, 2).toUpperCase()}
+              </div>
+              <div className="flex flex-col truncate leading-tight">
+                <span className="text-xs font-black text-white">{currentUser.username}</span>
+                <span className="text-[9px] text-amber-500 font-bold uppercase tracking-widest">
+                  {currentUser.role} • {language === 'AR' ? 'موثق ✅' : 'VERIFIED'}
                 </span>
               </div>
             </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3.5">
-            {/* Info pills */}
-            <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-850 px-3 py-2 rounded-2xl text-[11px] text-slate-400 font-bold">
-              <span>🔌</span>
-              <span>{language === 'AR' ? 'قناة البث:' : 'Protocol:'}</span>
-              <span className="text-cyan-400 font-extrabold">
-                {(config.remoteSyncMethod || 'API_DIRECT') === 'API_DIRECT'
-                  ? (language === 'AR' ? 'ربط مباشر API' : 'Direct API Link')
-                  : (language === 'AR' ? 'سحابة Drive (محاسب سوفت)' : 'Google Drive Cloud')}
-              </span>
+          ) : (
+            <div className="flex justify-center">
+              <button 
+                onClick={toggleSidebarCollapse}
+                className="w-10 h-10 rounded-full bg-slate-950 hover:bg-slate-850 flex items-center justify-center text-slate-400 hover:text-cyan-400 cursor-pointer"
+                title={language === 'AR' ? 'توسيع القائمة' : 'Expand Sidebar'}
+              >
+                <ChevronRight className={`w-4.5 h-4.5 ${language === 'AR' ? 'rotate-180' : ''}`} />
+              </button>
             </div>
+          )}
 
-            <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-850 px-3 py-2 rounded-2xl text-[11px] text-slate-400 font-bold">
-              <span>⏱️</span>
-              <span>{language === 'AR' ? 'آخر مزامنة ناجحة:' : 'Last Sync Time:'}</span>
-              <span className="text-amber-400 font-mono font-extrabold">
-                {getRelativeSyncTimeText()}
-              </span>
-            </div>
-
-            {/* Quick manual sync trigger button */}
+          {/* Quick Shopback Action (Preventing Screen Blockages) */}
+          <div className="space-y-1">
             <button
               type="button"
-              onClick={handleTriggerRemoteSync}
-              disabled={isRemoteSyncing}
-              className={`px-3.5 py-2 rounded-xl text-[11px] font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md border ${
-                isRemoteSyncing
-                  ? 'bg-slate-850 border-slate-800 text-slate-600 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-cyan-500/20 to-blue-500/10 text-cyan-300 hover:text-white border-cyan-500/30 hover:border-cyan-400'
+              onClick={onClose}
+              className={`w-full py-2.5 rounded-xl text-xs font-black flex items-center gap-2.5 transition-all cursor-pointer bg-gradient-to-r from-amber-500/15 via-yellow-500/5 to-transparent text-amber-405 text-amber-400 border border-amber-500/20 hover:border-amber-400 hover:text-white mb-2 shadow-[0_4px_12px_rgba(251,191,36,0.04)] select-none truncate ${
+                isSidebarCollapsed ? 'justify-center px-1' : 'px-3.5'
               }`}
+              title={language === 'AR' ? 'الرجوع للمعرض والتسوق' : 'Back to Storefront'}
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRemoteSyncing ? 'animate-spin' : ''}`} />
-              <span>{language === 'AR' ? 'مزامنة سريعة 🔄' : 'Force Sync 🔄'}</span>
+              <span className="text-base shrink-0">🛒</span>
+              {!isSidebarCollapsed && <span>{language === 'AR' ? 'المعرض والطلب كزبون' : 'Sales Storefront'}</span>}
             </button>
+          </div>
+
+          {/* SaaS Accordion Menus */}
+          <div className="flex flex-col gap-2 grow">
+            <span className={`text-[9px] text-slate-550 uppercase tracking-widest font-mono font-bold mb-1 px-3 ${isSidebarCollapsed ? 'hidden' : 'block'}`}>
+              {language === 'AR' ? 'بوابات الادارة والتحليل' : 'MANAGEMENT DECKS'}
+            </span>
+            
+            {/* 1. Dashboard Segment */}
+            <div className="space-y-1">
+              <button
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setActiveTab('ANALYTICS');
+                  } else {
+                    toggleSubmenu('dashboard');
+                    setActiveTab('ANALYTICS');
+                  }
+                }}
+                className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                  activeTab === 'ANALYTICS' ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-550/20' : 'text-slate-405 text-slate-400 hover:bg-slate-850 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <TrendingUp className="w-4.5 h-4.5 shrink-0 text-cyan-400" />
+                  {!isSidebarCollapsed && <span className="truncate">{language === 'AR' ? '📊 لوحة التحكم' : 'Analytical Control'}</span>}
+                </div>
+                {!isSidebarCollapsed && (
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-550 transition-all ${openSubmenus.dashboard ? 'rotate-180 text-cyan-400' : ''}`} />
+                )}
+              </button>
+
+              {!isSidebarCollapsed && openSubmenus.dashboard && (
+                <div className="mr-4 pr-3 pl-1 border-r border-slate-805 flex flex-col gap-1 mt-1 animate-fadeIn">
+                  <button
+                    onClick={() => setActiveTab('ANALYTICS')}
+                    className={`w-full text-right py-1.5 px-2.5 rounded-lg text-[11px] font-bold ${
+                      activeTab === 'ANALYTICS' ? 'text-cyan-400 bg-slate-950/40' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    • {language === 'AR' ? 'نظرة عامة والتحليلات' : 'Overview & Stats'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 2. Sales Segment */}
+            <div className="space-y-1">
+              <button
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setActiveTab('ORDERS');
+                  } else {
+                    toggleSubmenu('sales');
+                    setActiveTab('ORDERS');
+                  }
+                }}
+                className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                  activeTab === 'ORDERS' || activeTab === 'DEBTS' ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-550/20' : 'text-slate-405 text-slate-400 hover:bg-slate-850 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <ListOrdered className="w-4.5 h-4.5 shrink-0 text-teal-400" />
+                  {!isSidebarCollapsed && <span className="truncate">{language === 'AR' ? '🛒 المبيعات والطلبات' : 'Sales & Orders'}</span>}
+                </div>
+                {!isSidebarCollapsed && (
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-550 transition-all ${openSubmenus.sales ? 'rotate-180' : ''}`} />
+                )}
+              </button>
+
+              {!isSidebarCollapsed && openSubmenus.sales && (
+                <div className="mr-4 pr-3 pl-1 border-r border-slate-805 flex flex-col gap-1 mt-1 animate-fadeIn">
+                  <button
+                    onClick={() => setActiveTab('ORDERS')}
+                    className={`w-full text-right py-1.5 px-2.5 rounded-lg text-[11px] font-bold ${
+                      activeTab === 'ORDERS' ? 'text-cyan-400 bg-slate-950/40' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    • {language === 'AR' ? 'طلبات الزبائن والعمليات' : 'Commercial Orders'}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('DEBTS')}
+                    className={`w-full text-right py-1.5 px-2.5 rounded-lg text-[11px] font-bold ${
+                      activeTab === 'DEBTS' ? 'text-cyan-400 bg-slate-950/40' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    • {language === 'AR' ? 'إدارة الديون والذمم' : 'Accounts Receivable'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 3. Inventory Segment */}
+            <div className="space-y-1">
+              <button
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setActiveTab('INVENTORY');
+                  } else {
+                    toggleSubmenu('inventory');
+                    setActiveTab('INVENTORY');
+                  }
+                }}
+                className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                  activeTab === 'INVENTORY' ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-550/20' : 'text-slate-405 text-slate-400 hover:bg-slate-850 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Box className="w-4.5 h-4.5 shrink-0 text-amber-500" />
+                  {!isSidebarCollapsed && <span className="truncate">{language === 'AR' ? '📦 سجل المخزون' : 'Inventory HUB'}</span>}
+                </div>
+                {!isSidebarCollapsed && (
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-550 transition-all ${openSubmenus.inventory ? 'rotate-180' : ''}`} />
+                )}
+              </button>
+
+              {!isSidebarCollapsed && openSubmenus.inventory && (
+                <div className="mr-4 pr-3 pl-1 border-r border-slate-805 flex flex-col gap-1 mt-1 animate-fadeIn">
+                  <button
+                    onClick={() => {
+                      setActiveTab('INVENTORY');
+                      setInventorySubTab('PRODUCTS');
+                    }}
+                    className={`w-full text-right py-1.5 px-2.5 rounded-lg text-[11px] font-bold ${
+                      activeTab === 'INVENTORY' && inventorySubTab === 'PRODUCTS' ? 'text-cyan-400 bg-slate-950/40' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    • {language === 'AR' ? 'المنتجات والبطاقات' : 'Products Ledger'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab('INVENTORY');
+                      setInventorySubTab('CATEGORIES');
+                    }}
+                    className={`w-full text-right py-1.5 px-2.5 rounded-lg text-[11px] font-bold ${
+                      activeTab === 'INVENTORY' && inventorySubTab === 'CATEGORIES' ? 'text-cyan-400 bg-slate-950/40' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    • {language === 'AR' ? 'فئات المنتجات والتصنيفات' : 'Categories Matrix'}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('DATA_MIGRATION')}
+                    className={`w-full text-right py-1.5 px-2.5 rounded-lg text-[11px] font-bold ${
+                      activeTab === 'DATA_MIGRATION' ? 'text-cyan-400 bg-slate-950/40' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    • {language === 'AR' ? 'ترحيل وجرد البيانات' : 'SQLite Ingestion (ETL)'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 4. Finance Segment */}
+            <div className="space-y-1">
+              <button
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setActiveTab('DEBTS');
+                  } else {
+                    toggleSubmenu('finance');
+                    setActiveTab('DEBTS');
+                  }
+                }}
+                className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                  activeTab === 'DEBTS' && openSubmenus.finance ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-550/20' : 'text-slate-405 text-slate-400 hover:bg-slate-850 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <DollarSign className="w-4.5 h-4.5 shrink-0 text-emerald-400" />
+                  {!isSidebarCollapsed && <span className="truncate">{language === 'AR' ? '💰 الصناديق والمالية' : 'Financial Desk'}</span>}
+                </div>
+                {!isSidebarCollapsed && (
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-550 transition-all ${openSubmenus.finance ? 'rotate-180' : ''}`} />
+                )}
+              </button>
+
+              {!isSidebarCollapsed && openSubmenus.finance && (
+                <div className="mr-4 pr-3 pl-1 border-r border-slate-805 flex flex-col gap-1 mt-1 animate-fadeIn">
+                  <button
+                    onClick={() => setActiveTab('DEBTS')}
+                    className={`w-full text-right py-1.5 px-2.5 rounded-lg text-[11px] font-bold ${
+                      activeTab === 'DEBTS' ? 'text-cyan-400 bg-slate-950/40' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    • {language === 'AR' ? 'الصناديق وحصالات الكاش' : 'Cash Money Boxes'}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('ANALYTICS')}
+                    className={`w-full text-right py-1.5 px-2.5 rounded-lg text-[11px] font-bold ${
+                      activeTab === 'ANALYTICS' ? 'text-cyan-400 bg-slate-950/40' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    • {language === 'AR' ? 'الأداء المالي والأوليات' : 'Finance Summaries'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 5. AI Business Intelligence */}
+            <div className="space-y-1">
+              <button
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setActiveTab('AI_CHAT');
+                  } else {
+                    toggleSubmenu('ai');
+                    setActiveTab('AI_CHAT');
+                  }
+                }}
+                className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                  activeTab === 'AI_CHAT' ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-550/20' : 'text-slate-455 text-slate-400 hover:bg-slate-850 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Bot className="w-4.5 h-4.5 shrink-0 text-fuchsia-400" />
+                  {!isSidebarCollapsed && <span className="truncate">{language === 'AR' ? '🤖 ذكاء الأعمال AI' : 'Business Intel AI'}</span>}
+                </div>
+                {!isSidebarCollapsed && (
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-550 transition-all ${openSubmenus.ai ? 'rotate-180' : ''}`} />
+                )}
+              </button>
+
+              {!isSidebarCollapsed && openSubmenus.ai && (
+                <div className="mr-4 pr-3 pl-1 border-r border-slate-805 flex flex-col gap-1 mt-1 animate-fadeIn">
+                  <button
+                    onClick={() => setActiveTab('AI_CHAT')}
+                    className={`w-full text-right py-1.5 px-2.5 rounded-lg text-[11px] font-bold ${
+                      activeTab === 'AI_CHAT' ? 'text-cyan-400 bg-slate-950/40' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    • {language === 'AR' ? 'المساعد الذكي (AI Chat)' : 'AI Diagnostics Chat'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 6. Staff Accounts */}
+            <div className="space-y-1">
+              <button
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setActiveTab('STAFF');
+                  } else {
+                    toggleSubmenu('staff');
+                    setActiveTab('STAFF');
+                  }
+                }}
+                className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                  activeTab === 'STAFF' ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-550/20' : 'text-slate-455 text-slate-400 hover:bg-slate-850 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Users className="w-4.5 h-4.5 shrink-0 text-sky-400" />
+                  {!isSidebarCollapsed && <span className="truncate">{language === 'AR' ? '👥 الموظفون والأدوار' : 'Staff Matrix'}</span>}
+                </div>
+                {!isSidebarCollapsed && (
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-550 transition-all ${openSubmenus.staff ? 'rotate-180' : ''}`} />
+                )}
+              </button>
+
+              {!isSidebarCollapsed && openSubmenus.staff && (
+                <div className="mr-4 pr-3 pl-1 border-r border-slate-805 flex flex-col gap-1 mt-1 animate-fadeIn">
+                  <button
+                    onClick={() => setActiveTab('STAFF')}
+                    className={`w-full text-right py-1.5 px-2.5 rounded-lg text-[11px] font-bold ${
+                      activeTab === 'STAFF' ? 'text-cyan-400 bg-slate-950/40' : 'text-slate-450 hover:text-white'
+                    }`}
+                  >
+                    • {language === 'AR' ? 'إدارة الموظفين والوصول' : 'Staff Matrix privileges'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 7. Settings & Integrations */}
+            <div className="space-y-1">
+              <button
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setActiveTab('SETTINGS');
+                  } else {
+                    toggleSubmenu('settings');
+                    setActiveTab('SETTINGS');
+                  }
+                }}
+                className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                  activeTab === 'SETTINGS' || activeTab === 'DEVELOPER_PLATFORM' || activeTab === 'CHANGE_PASSWORD' ? 'bg-cyan-400/10 text-cyan-300 border border-cyan-500/20' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Settings className="w-4.5 h-4.5 shrink-0 text-slate-400" />
+                  {!isSidebarCollapsed && <span className="truncate">{language === 'AR' ? '⚙️ تهيئة الإعدادات' : 'Configuration'}</span>}
+                </div>
+                {!isSidebarCollapsed && (
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-550 transition-all ${openSubmenus.settings ? 'rotate-180' : ''}`} />
+                )}
+              </button>
+
+              {!isSidebarCollapsed && openSubmenus.settings && (
+                <div className="mr-4 pr-3 pl-1 border-r border-slate-805 flex flex-col gap-1 mt-1 animate-fadeIn">
+                  {isAdmin && (
+                    <button
+                      onClick={() => setActiveTab('SETTINGS')}
+                      className={`w-full text-right py-1.5 px-2.5 rounded-lg text-[11px] font-bold ${
+                        activeTab === 'SETTINGS' ? 'text-cyan-400 bg-slate-950/40' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      • {language === 'AR' ? 'إعدادات متجر الطيب' : 'General Configuration'}
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button
+                      onClick={() => setActiveTab('DEVELOPER_PLATFORM')}
+                      className={`w-full text-right py-1.5 px-2.5 rounded-lg text-[11px] font-bold ${
+                        activeTab === 'DEVELOPER_PLATFORM' ? 'text-cyan-400 bg-slate-950/40' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      • {language === 'AR' ? 'مفاتيح المطورين والربط' : 'API Keys / Integrations'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setActiveTab('CHANGE_PASSWORD')}
+                    className={`w-full text-right py-1.5 px-2.5 rounded-lg text-[11px] font-bold ${
+                      activeTab === 'CHANGE_PASSWORD' ? 'text-cyan-400 bg-slate-950/40' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    • {language === 'AR' ? 'تغيير كلمة المرور' : 'Change Security Password'}
+                  </button>
+                </div>
+              )}
+            </div>
+
           </div>
         </div>
 
-        {/* Dynamic header summary statistics block */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4.5">
+        {/* Database Sync Refresh Button and footer */}
+        <div className="p-4 border-t border-slate-800 flex flex-col gap-3.5 bg-slate-950/30">
+          <button
+            onClick={refreshAllData}
+            disabled={loading}
+            className="w-full py-2.5 bg-slate-950 hover:bg-slate-850 text-slate-200 border border-slate-800 hover:border-slate-700 rounded-xl text-[10px] font-mono tracking-wide flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 select-none animate-fadeIn"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${loading ? 'animate-spin' : ''}`} />
+            {!isSidebarCollapsed && <span>DB REFRESH PIPELINE</span>}
+          </button>
+          {!isSidebarCollapsed && (
+            <span className="text-[8.5px] text-slate-600 text-center select-none font-mono font-bold tracking-widest leading-none block">
+              STORE_ROUTER S1-SECURE
+            </span>
+          )}
+        </div>
+      </aside>
+
+      {/* SaaS App Shell Mobile Drawer Navigation */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <>
+            {/* Backdrop overlay */}
+            <div 
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 md:hidden"
+            />
+            {/* Sidebar drawer content */}
+            <motion.aside 
+              initial={{ x: language === 'AR' ? '100%' : '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: language === 'AR' ? '100%' : '-105%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed top-0 bottom-0 right-0 w-80 bg-slate-900 border-l border-slate-850 p-5 flex flex-col justify-between z-50 md:hidden text-right"
+            >
+              <div className="flex flex-col gap-6 overflow-y-auto grow">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">💎</span>
+                    <span className="font-extrabold text-sm text-white uppercase tracking-wider">Smart Store VIP</span>
+                  </div>
+                  <button 
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="p-1.5 rounded-lg bg-slate-950 text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Back to store */}
+                <button
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    onClose?.();
+                  }}
+                  className="w-full py-2.5 px-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-black flex items-center gap-2"
+                >
+                  <span>🛒</span>
+                  <span>{language === 'AR' ? 'المعرض والتسوق كزبون' : 'Sales Catalog Storefront'}</span>
+                </button>
+
+                {/* Main mobile tab selectors */}
+                <span className="text-[9px] text-slate-500 font-black tracking-widest uppercase block mb-1">
+                  {language === 'AR' ? 'المجموعات الرئيسية' : 'MAIN CONSOLE'}
+                </span>
+                <div className="flex flex-col gap-1.5">
+                  <button
+                    onClick={() => {
+                      setActiveTab('ANALYTICS');
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={`w-full px-3 py-2.5 rounded-xl text-xs font-black flex items-center gap-2.5 transition-all text-right ${
+                      activeTab === 'ANALYTICS' ? 'bg-cyan-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
+                    }`}
+                  >
+                    <TrendingUp className="w-4 h-4 shrink-0" />
+                    <span>{language === 'AR' ? 'لوحة التحكم والتحليلات' : 'Analytics & Stats'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setActiveTab('ORDERS');
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={`w-full px-3 py-2.5 rounded-xl text-xs font-black flex items-center gap-2.5 transition-all text-right ${
+                      activeTab === 'ORDERS' ? 'bg-cyan-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
+                    }`}
+                  >
+                    <ListOrdered className="w-4 h-4 shrink-0" />
+                    <span>{language === 'AR' ? 'طلبات الزبائن والعمليات' : 'Commercial Orders'}</span>
+                  </button>
+
+                  {(isAdmin || pCheck.editInventory) && (
+                    <button
+                      onClick={() => {
+                        setActiveTab('INVENTORY');
+                        setInventorySubTab('PRODUCTS');
+                        setIsMobileMenuOpen(false);
+                      }}
+                      className={`w-full px-3 py-2.5 rounded-xl text-xs font-black flex items-center gap-2.5 transition-all text-right ${
+                        activeTab === 'INVENTORY' ? 'bg-cyan-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
+                      }`}
+                    >
+                      <Box className="w-4 h-4 shrink-0" />
+                      <span>{language === 'AR' ? 'جرد ومراقبة المخزون' : 'Inventory HUB'}</span>
+                    </button>
+                  )}
+
+                  {(isAdmin || pCheck.viewSales) && (
+                    <button
+                      onClick={() => {
+                        setActiveTab('DEBTS');
+                        setIsMobileMenuOpen(false);
+                      }}
+                      className={`w-full px-3 py-2.5 rounded-xl text-xs font-black flex items-center gap-2.5 transition-all text-right ${
+                        activeTab === 'DEBTS' ? 'bg-cyan-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
+                      }`}
+                    >
+                      <Handshake className="w-4 h-4 shrink-0" />
+                      <span>{language === 'AR' ? 'الديون والصناديق وحصالات الكاش' : 'Outstanding Receivables'}</span>
+                    </button>
+                  )}
+
+                  {isAdmin && (
+                    <button
+                      onClick={() => {
+                        setActiveTab('STAFF');
+                        setIsMobileMenuOpen(false);
+                      }}
+                      className={`w-full px-3 py-2.5 rounded-xl text-xs font-black flex items-center gap-2.5 transition-all text-right ${
+                        activeTab === 'STAFF' ? 'bg-cyan-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
+                      }`}
+                    >
+                      <Users className="w-4 h-4 shrink-0" />
+                      <span>{language === 'AR' ? 'مصفوفة الموظفين والصلاحيات' : 'Staff Matrix'}</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setActiveTab('AI_CHAT');
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={`w-full px-3 py-2.5 rounded-xl text-xs font-black flex items-center gap-2.5 transition-all text-right ${
+                      activeTab === 'AI_CHAT' ? 'bg-cyan-500 text-slate-950 font-black shadow-md' : 'text-slate-450 hover:bg-slate-850 hover:text-white'
+                    }`}
+                  >
+                    <Bot className="w-4 h-4 shrink-0 text-fuchsia-400" />
+                    <span>{language === 'AR' ? 'المساعد ذكاء الأعمال المساعد' : 'BI Intelligent Chat'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setActiveTab('CHANGE_PASSWORD');
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={`w-full px-3 py-2.5 rounded-xl text-xs font-black flex items-center gap-2.5 transition-all text-right ${
+                      activeTab === 'CHANGE_PASSWORD' ? 'bg-cyan-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
+                    }`}
+                  >
+                    <Key className="w-4 h-4 shrink-0 text-amber-500" />
+                    <span>{language === 'AR' ? 'تغيير كلمة المرور' : 'Change Security Password'}</span>
+                  </button>
+
+                  {isAdmin && (
+                    <button
+                      onClick={() => {
+                        setActiveTab('DATA_MIGRATION');
+                        setIsMobileMenuOpen(false);
+                      }}
+                      className={`w-full px-3 py-2.5 rounded-xl text-xs font-black flex items-center gap-2.5 transition-all text-right ${
+                        activeTab === 'DATA_MIGRATION' ? 'bg-cyan-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
+                      }`}
+                    >
+                      <Database className="w-4 h-4 shrink-0 text-cyan-400" />
+                      <span>{language === 'AR' ? 'استيراد وترحيل البيانات' : 'SQLite Ingestion'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-4 border-t border-slate-800">
+                <button
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    refreshAllData();
+                  }}
+                  className="w-full py-2 bg-slate-950 border border-slate-800 rounded-xl text-[10px] text-cyan-400 flex items-center justify-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>DB MANUAL SYNC</span>
+                </button>
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Main SaaS Frame Context Area */}
+      <main className="flex-1 min-w-0 flex flex-col h-screen overflow-y-auto">
+        
+        {/* Top Header Panel (Modern Omnipresent Header) */}
+        <header className="bg-slate-900 border-b border-slate-800/85 py-4 px-6 md:px-8 space-y-4 flex flex-col shrink-0 text-right">
           
-          <div className="bg-slate-900 rounded-3xl border border-slate-850 p-5.5 flex justify-between items-center shadow-lg">
-            <div>
-              <span className="block text-slate-500 text-[10px] font-black tracking-widest uppercase font-mono">{language === 'AR' ? 'مبيعات الصندوق الصافية' : 'BOX OFFICE TOTAL SALES'}</span>
-              <span className="text-2xl font-mono font-black text-emerald-400 mt-1 block">{(totalSalesYER).toLocaleString()} YER</span>
-              <span className="text-[10px] text-slate-450 font-mono block">≈ ${(totalSalesYER / config.exchangeRateUSD).toFixed(1)} USD • {(totalSalesYER / config.exchangeRateSAR).toFixed(1)} SAR</span>
+          {/* Main row with Brand / Collapser, Search, Indicators, Mobile burger, Notification and User details */}
+          <div className="flex items-center justify-between gap-4">
+            
+            {/* Left/Right Column: Mobil Burger, Collapser (Desktop), Breadcrumb */}
+            <div className="flex items-center gap-3">
+              {/* Mobile Burger Open */}
+              <button
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="p-2 -mr-1 rounded-xl bg-slate-850 border border-slate-800 text-slate-300 hover:text-white md:hidden cursor-pointer"
+                aria-label="Open navigation sidebar menu"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+
+              {/* Desktop Collapser Toggle (Only displays icon if collapsed) */}
+              {isSidebarCollapsed && (
+                <button 
+                  onClick={toggleSidebarCollapse}
+                  className="p-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-400 hover:text-white hidden md:block cursor-pointer"
+                  title={language === 'AR' ? 'توسيع القائمة' : 'Expand Sidebar'}
+                >
+                  <ChevronRight className={`w-4 h-4 ${language === 'AR' ? '' : 'rotate-180'}`} />
+                </button>
+              )}
+
+              {/* Breadcrumbs (Professional path display) */}
+              <div className="hidden sm:flex flex-col text-right select-none">
+                <h1 className="text-xs font-black text-slate-500 uppercase tracking-widest font-mono">
+                  {language === 'AR' ? 'منصة الخدمات السحابية لمتجر الذيباني' : 'ALDHEEBANI VIP CLOUD WORKSPACE'}
+                </h1>
+                <div className="flex items-center gap-1.5 mt-0.5 text-xs text-white font-extrabold">
+                  <span className="text-cyan-400 font-black">⚡</span>
+                  <span>
+                    {activeTab === 'ANALYTICS' && (language === 'AR' ? 'لوحة التحكم > التقارير والإحصائيات' : 'Dashboard > Analytics')}
+                    {activeTab === 'SETTINGS' && (language === 'AR' ? 'الإعدادات > إعدادات المتجر' : 'Settings > Store Config')}
+                    {activeTab === 'INVENTORY' && (language === 'AR' ? `المخزون > ${inventorySubTab === 'PRODUCTS' ? 'المنتجات' : 'الفئات'}` : `Inventory > ${inventorySubTab === 'PRODUCTS' ? 'Products' : 'Categories'}`)}
+                    {activeTab === 'STAFF' && (language === 'AR' ? 'المستخدمون والصلاحيات > الموظفون والأدوار' : 'Users & Permissions > Staff Roles')}
+                    {activeTab === 'DEBTS' && (language === 'AR' ? 'القطاع المالي > الديون والصناديق' : 'Finance > Debts & Boxes')}
+                    {activeTab === 'ORDERS' && (language === 'AR' ? 'المبيعات والطلبات > قائمة الطلبات' : 'Sales & Orders > Orders List')}
+                    {activeTab === 'AI_CHAT' && (language === 'AR' ? 'الذكاء الاصطناعي > المساعد الذكي' : 'AI Assistant > BI Agent')}
+                    {activeTab === 'DEVELOPER_PLATFORM' && (language === 'AR' ? 'الإعدادات > مفاتيح المطورين وعقود الربط' : 'Settings > Dev Platform')}
+                    {activeTab === 'CHANGE_PASSWORD' && (language === 'AR' ? 'الإعدادات > تغيير الكلمة السرية' : 'Settings > Change Password')}
+                    {activeTab === 'DATA_MIGRATION' && (language === 'AR' ? 'استيراد وترحيل البيانات > استيراد SQLite' : 'Data Migration > SQLite Import')}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="p-3 bg-emerald-950 rounded-2xl text-emerald-400">
-              <TrendingUp className="w-6 h-6" />
+
+            {/* Middle Column: Omnisearch Input bar */}
+            <div className="flex-1 max-w-md hidden lg:block">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder={language === 'AR' ? 'بحث سريع وعام في الكاشير والفهارس والأعضاء...' : 'Universal global workspace search...'}
+                  value={globalSearchTerm}
+                  onChange={(e) => setGlobalSearchTerm(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/25 py-2 pr-9 pl-4 rounded-xl text-xs text-slate-105 placeholder-slate-500 transition-all text-right"
+                />
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-cyan-400" />
+                {globalSearchTerm && (
+                  <button 
+                    onClick={() => setGlobalSearchTerm('')}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Connection States, Notifications, User Profile Menu */}
+            <div className="flex items-center gap-3">
+              
+              {/* Database Live Gateway Indicator */}
+              <div 
+                className={`py-1.5 px-3 rounded-full text-[10px] font-black uppercase flex items-center gap-1.5 border border-slate-850/80 shadow ${
+                  config.remoteSyncStatus === 'CONNECTED' || !isRemoteSyncing
+                    ? 'bg-emerald-950/45 text-emerald-400 border-emerald-950/70'
+                    : 'bg-amber-950/45 text-amber-400 border-amber-950/70'
+                }`}
+                title={language === 'AR' ? 'حالة الارتباط والتزامن المالي' : 'Sync link channel'}
+              >
+                <div className="relative flex h-2 w-2">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${config.remoteSyncStatus === 'CONNECTED' ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${config.remoteSyncStatus === 'CONNECTED' ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                </div>
+                <span className="font-mono hidden sm:inline">Supabase S1 Link: Stable</span>
+                <span className="font-mono inline sm:hidden">Cloud</span>
+              </div>
+
+              {/* Notification Center Popover Trigger */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowNotifications(!showNotifications)}
+                  className="p-2 bg-slate-950 border border-slate-800 rounded-xl relative hover:text-white text-slate-400 hover:bg-slate-850 cursor-pointer"
+                  title={language === 'AR' ? 'مركز التنبيهات والأحداث البارزة' : 'Notifications & System Logs'}
+                >
+                  <Bell className="w-4 h-4" />
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-cyan-400 animate-bounce" />
+                </button>
+
+                {/* Dropdown Card */}
+                {showNotifications && (
+                  <>
+                    <div 
+                      onClick={() => setShowNotifications(false)}
+                      className="fixed inset-0 z-30"
+                    />
+                    <div className="absolute left-0 mt-3 w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl p-4 space-y-3 z-40 text-right">
+                      <div className="flex justify-between items-center pb-2 border-b border-slate-800 text-right" dir="rtl">
+                        <h4 className="text-xs font-black text-white">{language === 'AR' ? '🔔 مركز التنبيهات والأحداث' : 'System events logs'}</h4>
+                        <button 
+                          onClick={() => setShowNotifications(false)}
+                          className="text-[9px] hover:text-white text-slate-400 cursor-pointer"
+                        >
+                          {language === 'AR' ? 'إغلاق' : 'Close'}
+                        </button>
+                      </div>
+                      <div className="space-y-2.5 max-h-64 overflow-y-auto">
+                        <div className="p-2 bg-slate-950 rounded-lg border border-slate-850 text-[10px] space-y-0.5 text-right">
+                          <p className="text-slate-300 leading-normal">
+                            {language === 'AR' ? 'تم تحديث أسعار الصرف بنجاح (سعر الدولار: 535 ريال)' : 'Exchange rates updated successfully (USD: 535 YER)'}
+                          </p>
+                          <span className="text-slate-500 font-mono">قبل 5 دقائق</span>
+                        </div>
+                        <div className="p-2 bg-slate-950 rounded-lg border border-slate-850 text-[10px] space-y-0.5 text-right">
+                          <p className="text-slate-300 leading-normal">
+                            {language === 'AR' ? 'تمت مزامنة المحاسب التلقائي ومطابقة الصناديق' : 'AnyDesk alternate database synced'}
+                          </p>
+                          <span className="text-slate-500 font-mono">قبل ساعة واحدة</span>
+                        </div>
+                        <div className="p-2 bg-slate-950 rounded-lg border border-slate-850 text-[10px] space-y-0.5 text-right">
+                          <p className="text-slate-300 leading-normal">
+                            {language === 'AR' ? 'تنبيه مخزون: باقة يمن موبايل بقيمة 500 قاربت على النفاد' : 'Stock Alert: Yemen Mobile 500 running low'}
+                          </p>
+                          <span className="text-slate-500 font-mono">قبل يوم واحد</span>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Operator details and escape */}
+              <div className="flex items-center gap-2">
+                <div className="hidden xl:flex flex-col text-right truncate max-w-[120px] select-none leading-none">
+                  <span className="text-[10px] font-black text-white truncate">abdulkrem065@gmail.com</span>
+                  <span className="text-[8px] text-cyan-400 font-bold uppercase tracking-widest mt-0.5 font-mono">{currentUser.role} Account</span>
+                </div>
+                <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-tr from-cyan-900 to-slate-950 border border-slate-800 text-cyan-300 font-bold font-mono text-xs flex items-center justify-center shadow-inner select-none pointer-events-none">
+                  VIP
+                </div>
+              </div>
+
             </div>
           </div>
 
-          <div className="bg-slate-900 rounded-3xl border border-slate-850 p-5.5 flex justify-between items-center shadow-lg">
-            <div>
-              <span className="block text-slate-500 text-[10px] font-black tracking-widest uppercase font-mono">{language === 'AR' ? 'عصارة الديون والذمم الآجلة' : 'TOTAL CUSTOMER DEBTS LEDGER'}</span>
-              <span className="text-2xl font-mono font-black text-rose-452 text-rose-400 mt-1 block">{activeDebtsTotalYER.toLocaleString()} YER</span>
-              <span className="text-[10px] text-slate-450 font-mono block">({debts.filter(d => d.totalDebtYER > 0).length} {language === 'AR' ? 'حسابات نشطة' : 'Active accounts'})</span>
+          {/* Collapsible Mobile global search bar */}
+          <div className="block lg:hidden">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder={language === 'AR' ? 'ابحث هنا في أي شاشات...' : 'Quick global search...'}
+                value={globalSearchTerm}
+                onChange={(e) => setGlobalSearchTerm(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/25 py-2.5 pr-9 pl-4 rounded-xl text-xs text-slate-105 placeholder-slate-500 transition-all text-right"
+              />
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-cyan-400" />
             </div>
-            <div className="p-3 bg-red-950 rounded-2xl text-red-400">
-              <Handshake className="w-6 h-6" />
+          </div>
+        </header>
+
+        {/* Content body layout container workspace */}
+        <div className="flex-1 p-6 md:p-8 space-y-6 overflow-y-auto">
+          
+          {/* Dynamic Warning Notice Bar (Always visible to maintain back capabilities for multi-viewport toggles) */}
+          <div className="bg-gradient-to-r from-amber-500/10 via-amber-600/5 to-transparent border border-amber-500/20 rounded-3xl p-4 md:p-5 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 shadow-md animate-fadeIn text-right" dir="rtl">
+            <div className="space-y-1 text-right">
+              <h3 className="text-xs md:text-sm font-black text-amber-400 flex items-center gap-2">
+                <span>⚠️</span>
+                <span>بوابة الإدارة الشاملة والتشغيل لمستودعات الذيباني التجارية VIP</span>
+              </h3>
+              <p className="text-[10px] md:text-xs text-slate-400 leading-relaxed max-w-4xl">
+                باصفة هويتك ({currentUser.role})، تستطيع إدارة فئات المنتجات، الصناديق المحاسبية، فواتير المبيعات، ومراقبة تفتيش الذمم المترصدة. للذهاب لمعاينة المتجر كزبون، انقر على زر العودة المباشر.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4.5 py-2 rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-350 hover:to-yellow-400 text-slate-950 text-xs font-black flex items-center gap-2 transition-all cursor-pointer shadow-md select-none shrink-0"
+            >
+              <span>🛒</span>
+              <span>الذهاب لعرض المنتجات والتسوق</span>
+            </button>
+          </div>
+
+          {/* AnyDesk Replacement Sync Dashboard Panel status */}
+          <div className="bg-slate-900 border border-slate-850 p-5 rounded-3xl flex flex-col xl:flex-row items-center justify-between gap-4 shadow-xl animate-fadeIn text-right" dir="rtl">
+            <div className="flex items-center gap-4">
+              <div className={`p-2.5 rounded-2xl ${
+                config.remoteSyncStatus === 'CONNECTED'
+                  ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-500/20'
+                  : 'bg-amber-950/85 text-amber-400 border border-amber-500/20'
+              }`}>
+                <Wifi className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5 text-right">
+                <span className="text-[9.5px] text-slate-500 font-black tracking-widest uppercase block font-mono">
+                  {language === 'AR' ? 'بديل السحابة التلقائي للأني ديسك (AnyDesk Cloud-Pipeline Integration)' : 'AnyDesk Alternative Integration'}
+                </span>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-extrabold text-white">
+                    {language === 'AR' ? 'ارتباط ومزامنة محاسب سوفت مع سوبابيس (Supabase Sync Status):' : 'Ledger Sync with Supabase:'}
+                  </h4>
+                  <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                    config.remoteSyncStatus === 'CONNECTED'
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15'
+                      : 'bg-amber-500/10 text-amber-400 border border-amber-500/15'
+                  }`}>
+                    {config.remoteSyncStatus === 'CONNECTED'
+                      ? (language === 'AR' ? '🟢 متصل ومزامن' : 'Live Sync')
+                      : (language === 'AR' ? '⚡ جاري المعالجة...' : 'Processing...')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-850 px-3 py-2 rounded-2xl text-[11px] text-slate-450 font-bold">
+                <span>🔌</span>
+                <span className="hidden sm:inline">{language === 'AR' ? 'نوع الرابط:' : 'Channel type:'}</span>
+                <span className="text-cyan-400 font-extrabold">
+                  {config.remoteSyncMethod === 'API_DIRECT' ? 'Direct API' : 'Google Drive Cloud'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-850 px-3 py-2 rounded-2xl text-[11px] text-slate-450 font-bold">
+                <span>⏱️</span>
+                <span className="hidden sm:inline">{language === 'AR' ? 'آخر تحديث ناجح:' : 'Latest sync:'}</span>
+                <span className="text-amber-400 font-mono font-extrabold">
+                  {getRelativeSyncTimeText()}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleTriggerRemoteSync}
+                disabled={isRemoteSyncing}
+                className={`px-3.5 py-2 rounded-xl text-[11px] font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md border ${
+                  isRemoteSyncing
+                    ? 'bg-slate-850 border-slate-800 text-slate-600'
+                    : 'bg-gradient-to-r from-cyan-500/20 to-blue-500/10 text-cyan-300 hover:text-white border-cyan-500/30 hover:border-cyan-400'
+                }`}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRemoteSyncing ? 'animate-spin' : ''}`} />
+                <span>{language === 'AR' ? 'مزامنة وتصديق البيانات 🔄' : 'Sync Databases 🔄'}</span>
+              </button>
             </div>
           </div>
 
-          <div className="bg-slate-900 rounded-3xl border border-slate-850 p-5.5 flex justify-between items-center shadow-lg">
-            <div>
-              <span className="block text-slate-500 text-[10px] font-black tracking-widest uppercase font-mono">{language === 'AR' ? 'طاقم العمل والتشغيل' : 'OFFICIAL STAFF ENGAGEMENTS'}</span>
-              <span className="text-2xl font-mono font-black text-cyan-400 mt-1 block">{staffList.length} {language === 'AR' ? 'حسابات' : 'Terminal Accounts'}</span>
-              <span className="text-[10px] text-slate-450 font-mono block">{language === 'AR' ? 'بيئة تشغيل STORE_ROUTER معينة' : 'STORE_ROUTER network sandbox initialized'}</span>
+          {/* SaaS Core Performance KPI Summaries */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-right">
+            
+            {/* Sales Card */}
+            <div className="bg-gradient-to-br from-slate-900 to-slate-950 rounded-3xl border border-slate-850 p-6 flex justify-between items-center shadow-lg hover:border-cyan-500/30 transition-all duration-300 group">
+              <div className="space-y-1.5 text-right">
+                <span className="block text-slate-500 text-[10px] font-black tracking-widest uppercase font-mono">
+                  {language === 'AR' ? 'مبيعات الصندوق الصافية' : 'BOX OFFICE SALES'}
+                </span>
+                <span className="text-2xl font-mono font-black text-emerald-400 tracking-wide block group-hover:scale-102 transition-transform">
+                  {(totalSalesYER).toLocaleString()} YER
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono block">
+                  ≈ ${(totalSalesYER / config.exchangeRateUSD).toFixed(1)} USD • {(totalSalesYER / config.exchangeRateSAR).toFixed(1)} SAR
+                </span>
+              </div>
+              <div className="p-3 bg-emerald-950/80 border border-emerald-800/40 rounded-2xl text-emerald-400 shadow group-hover:bg-emerald-900 transition-colors">
+                <TrendingUp className="w-6 h-6 animate-pulse" />
+              </div>
             </div>
-            <div className="p-3 bg-cyan-950 rounded-2xl text-cyan-400">
-              <ShieldCheck className="w-6 h-6" />
+
+            {/* Debts Card */}
+            <div className="bg-gradient-to-br from-slate-900 to-slate-950 rounded-3xl border border-slate-850 p-6 flex justify-between items-center shadow-lg hover:border-rose-500/30 transition-all duration-300 group">
+              <div className="space-y-1.5 text-right">
+                <span className="block text-slate-500 text-[10px] font-black tracking-widest uppercase font-mono">
+                  {language === 'AR' ? 'كشوفات وأرصدة الديون المتبقية' : 'TOTAL OUTSTANDING CLIENT DEBTS'}
+                </span>
+                <span className="text-2xl font-mono font-black text-rose-400 tracking-wide block group-hover:scale-102 transition-transform">
+                  {activeDebtsTotalYER.toLocaleString()} YER
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono block">
+                  ({debts.filter(d => d.totalDebtYER > 0).length} {language === 'AR' ? 'حسابات دائنة نشطة' : 'Active ledger card records'})
+                </span>
+              </div>
+              <div className="p-3 bg-red-950/80 border border-red-800/40 rounded-2xl text-red-400 shadow group-hover:bg-red-900 transition-colors">
+                <Handshake className="w-6 h-6" />
+              </div>
             </div>
+
+            {/* Staff Card */}
+            <div className="bg-gradient-to-br from-slate-900 to-slate-950 rounded-3xl border border-slate-850 p-6 flex justify-between items-center shadow-lg hover:border-blue-500/30 transition-all duration-300 group">
+              <div className="space-y-1.5 text-right">
+                <span className="block text-slate-500 text-[10px] font-black tracking-widest uppercase font-mono">
+                  {language === 'AR' ? 'الكادر التشغيلي النشط' : 'ACTIVE STAFF SESSIONS'}
+                </span>
+                <span className="text-2xl font-mono font-black text-cyan-400 tracking-wide block group-hover:scale-102 transition-transform">
+                  {staffList.length} {language === 'AR' ? 'أعضاء مسجلين' : 'Active Officers'}
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono block">
+                  {language === 'AR' ? 'تشفير وحماية بوابات STORE_ROUTER' : 'SSL security layer enforced'}
+                </span>
+              </div>
+              <div className="p-3 bg-blue-950/80 border border-blue-800/40 rounded-2xl text-cyan-450 shadow group-hover:bg-blue-900 transition-colors">
+                <ShieldCheck className="w-6 h-6 animate-pulse" />
+              </div>
+            </div>
+
           </div>
 
         </div>
