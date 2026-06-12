@@ -27,7 +27,8 @@ interface HeaderProps {
   onAddToCart: (p: Product) => void;
   cartCount: number;
   onOpenCart: () => void;
-  onTriggerAI: () => void;
+  showAssistantPage: boolean;
+  onToggleAssistantPage: () => void;
 }
 
 export default function Header({
@@ -45,7 +46,8 @@ export default function Header({
   onAddToCart,
   cartCount,
   onOpenCart,
-  onTriggerAI
+  showAssistantPage,
+  onToggleAssistantPage
 }: HeaderProps) {
   // Voice & Speech Recognition States (Web Speech API)
   const [isListening, setIsListening] = useState(false);
@@ -368,11 +370,14 @@ export default function Header({
                 if (isAdminView && onToggleAdminView) {
                   onToggleAdminView();
                 }
+                if (showAssistantPage && onToggleAssistantPage) {
+                  onToggleAssistantPage();
+                }
                 const el = document.getElementById('products-showroom-grid');
                 el?.scrollIntoView({ behavior: 'smooth' });
               }}
               className={`px-2 py-1 rounded-lg text-[10px] md:text-[11px] font-black flex items-center gap-1 cursor-pointer transition-all border ${
-                !isAdminView 
+                !isAdminView && !showAssistantPage
                   ? 'bg-[#facc15] text-slate-950 border-amber-400 font-extrabold shadow-sm' 
                   : 'bg-slate-950/60 text-slate-300 border-slate-800 hover:text-white'
               }`}
@@ -384,8 +389,12 @@ export default function Header({
             {/* 2. المساعد الذكي AI */}
             <button
               type="button"
-              onClick={onTriggerAI}
-              className="px-2 py-1 rounded-lg text-[10px] md:text-[11px] font-black bg-slate-950/60 hover:bg-slate-900 text-slate-100 border border-slate-800 hover:border-amber-400 cursor-pointer flex items-center gap-1 transition-all"
+              onClick={onToggleAssistantPage}
+              className={`px-2 py-1 rounded-lg text-[10px] md:text-[11px] font-black flex items-center gap-1 transition-all border cursor-pointer ${
+                showAssistantPage
+                  ? 'bg-[#facc15] text-slate-950 border-amber-400 font-extrabold shadow-sm'
+                  : 'bg-slate-950/60 text-slate-300 border-slate-800 hover:border-amber-400'
+              }`}
             >
               <span>🤖</span>
               <span>{t('nav.bot', language)}</span>

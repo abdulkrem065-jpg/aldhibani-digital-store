@@ -20,6 +20,7 @@ import {
   DEFAULT_STORE_CONFIG, DEFAULT_CATEGORIES, DEFAULT_PRODUCTS, DEFAULT_ORDERS, DEFAULT_DEBTS 
 } from '../data/defaultData';
 import { SupabaseServerlessDB, MoneyBox, YouthWorkforceProfile } from '../lib/supabase';
+import DataMigration from './DataMigration';
 
 interface DashboardProps {
   language: Language;
@@ -50,8 +51,8 @@ export default function Dashboard({
   banners = [],
   onBannersChanged
 }: DashboardProps) {
-  // Tabs: 'ANALYTICS' | 'SETTINGS' | 'INVENTORY' | 'STAFF' | 'DEBTS' | 'ORDERS' | 'CATEGORIES' | 'AI_CHAT' | 'DEVELOPER_PLATFORM' | 'CHANGE_PASSWORD'
-  const [activeTab, setActiveTab] = useState<'ANALYTICS' | 'SETTINGS' | 'INVENTORY' | 'STAFF' | 'DEBTS' | 'ORDERS' | 'CATEGORIES' | 'AI_CHAT' | 'DEVELOPER_PLATFORM' | 'CHANGE_PASSWORD'>('ANALYTICS');
+  // Tabs: 'ANALYTICS' | 'SETTINGS' | 'INVENTORY' | 'STAFF' | 'DEBTS' | 'ORDERS' | 'CATEGORIES' | 'AI_CHAT' | 'DEVELOPER_PLATFORM' | 'CHANGE_PASSWORD' | 'DATA_MIGRATION'
+  const [activeTab, setActiveTab ] = useState<'ANALYTICS' | 'SETTINGS' | 'INVENTORY' | 'STAFF' | 'DEBTS' | 'ORDERS' | 'CATEGORIES' | 'AI_CHAT' | 'DEVELOPER_PLATFORM' | 'CHANGE_PASSWORD' | 'DATA_MIGRATION'>('ANALYTICS');
 
   // Developer System Generator dynamic entries representing spawned systems
   const [generatedSystems, setGeneratedSystems] = useState<any[]>([
@@ -2475,6 +2476,18 @@ export default function Dashboard({
               <Key className="w-4.5 h-4.5 text-amber-500" />
               <span>{language === 'AR' ? 'تغيير كلمتي السرية' : 'Change My Password'}</span>
             </button>
+
+            {isAdmin && (
+              <button
+                onClick={() => setActiveTab('DATA_MIGRATION')}
+                className={`px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+                  activeTab === 'DATA_MIGRATION' ? 'bg-cyan-500 text-slate-950 font-black shadow-lg shadow-cyan-950/20' : 'text-slate-400 hover:bg-slate-850 hover:text-white'
+                }`}
+              >
+                <Database className="w-4.5 h-4.5 text-cyan-400" />
+                <span>{language === 'AR' ? 'استيراد وترحيل البيانات' : 'SQLite Data Migration'}</span>
+              </button>
+            )}
 
           </div>
         </div>
@@ -7417,6 +7430,13 @@ export default function Dashboard({
                 <span>{language === 'AR' ? 'تحديث وحفظ كلمة المرور الجديدة' : 'Apply & Save New Password'}</span>
               </button>
             </form>
+          </div>
+        )}
+
+        {/* 🚀 SMART DATA IMPORT ENGINE TAB CONTENT */}
+        {activeTab === 'DATA_MIGRATION' && (
+          <div className="animate-fadeIn shadow-2xl" dir="rtl">
+            <DataMigration language={language} />
           </div>
         )}
 

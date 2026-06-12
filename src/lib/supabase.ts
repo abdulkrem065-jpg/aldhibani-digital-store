@@ -457,8 +457,17 @@ export class SupabaseServerlessDB {
     const idx = list.findIndex(s => s.id === staffId);
     if (idx !== -1) {
       list[idx].password = newPasswordPlain;
+      // Invalidate the old hashed password locally if it exists
+      if (list[idx].password_hash !== undefined) {
+        delete list[idx].password_hash;
+      }
       this.set('aldhibani_local_staff', list);
-      this.asyncUpsert('staff_users', list[idx]);
+      
+      // In Supabase, make sure old password_hash is set to null so the login API validates the new password correctly.
+      this.asyncUpsert('staff_users', {
+        ...list[idx],
+        password_hash: null
+      });
     }
     return list;
   }

@@ -25,12 +25,16 @@ import {
 } from './data/defaultData';
 import { SupabaseServerlessDB } from './lib/supabase';
 import { t } from './lib/translations';
+import { AssistantProvider } from './modules/assistant/providers/AssistantProvider';
+import { FloatingChatButton } from './modules/assistant/components/FloatingChatButton';
+import { AssistantPage } from './modules/assistant/pages/AssistantPage';
 
 export default function App() {
   // Session Router States
   const [view, setView] = useState<'GATEWAY' | 'STORE'>(() => {
     return (localStorage.getItem('aldhibani_view') as any) || 'GATEWAY';
   });
+  const [showAssistantPage, setShowAssistantPage] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<StaffUser | null>(() => {
     const saved = localStorage.getItem('aldhibani_user');
     try {
@@ -436,7 +440,8 @@ export default function App() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans select-none antialiased">
+    <AssistantProvider>
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans select-none antialiased">
       
       {/* Dynamic Main Routing Switches */}
       {view === 'GATEWAY' ? (
@@ -462,12 +467,23 @@ export default function App() {
             config={config}
             user={currentUser}
             onLogout={handleLogout}
-            onToggleAdminView={() => setIsAdminView(!isAdminView)}
+            onToggleAdminView={() => {
+              setIsAdminView(!isAdminView);
+              if (showAssistantPage) {
+                setShowAssistantPage(false);
+              }
+            }}
             isAdminView={isAdminView}
             onAddToCart={(p) => handleAddToCart(p, 1, p.category.startsWith('DIGITAL_') ? { notes: 'AI added line' } : undefined)}
             cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)}
             onOpenCart={() => setIsCartOpen(true)}
-            onTriggerAI={handleTriggerAI}
+            showAssistantPage={showAssistantPage}
+            onToggleAssistantPage={() => {
+              setShowAssistantPage(!showAssistantPage);
+              if (isAdminView) {
+                setIsAdminView(false);
+              }
+            }}
           />
 
           <div className="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -477,6 +493,11 @@ export default function App() {
                 <RefreshCw className="w-8 h-8 text-cyan-400 animate-spin" />
                 <span className="text-xs text-slate-500 font-mono tracking-widest uppercase">SYNCING STABLE COMMERCE BUFFERS...</span>
               </div>
+            ) : showAssistantPage ? (
+              <AssistantPage 
+                orgId={config.orgId} 
+                userRole={currentUser?.role || 'GUEST'} 
+              />
             ) : isAdminView && currentUser ? (
               /* Administrative Dashboard Workspace Area */
               <Dashboard
@@ -1429,9 +1450,16 @@ export default function App() {
             )}
           </AnimatePresence>
 
+          {/* Floating Smart Assistant Action Widget */}
+          <FloatingChatButton 
+            orgId={config.orgId} 
+            userRole={currentUser?.role || 'GUEST'} 
+          />
+
         </div>
       )}
 
     </div>
+    </AssistantProvider>
   );
 }

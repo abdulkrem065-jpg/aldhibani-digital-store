@@ -105,8 +105,8 @@ export default function Gateway({ onBypass, onLoginSuccess, storeNameAR, storeNa
           } else if (matched.role === 'COMMUNICATIONS' && password === telecomPass) {
             console.log('[Auth Debug] Password matched COMMUNICATIONS account password!');
             isValid = true;
-          } else if (password === '123' || password === adminPass) {
-            console.log('[Auth Debug] Password fell back to default 123 or admin override!');
+          } else if (password === adminPass) {
+            console.log('[Auth Debug] Password fell back to admin override!');
             isValid = true;
           } else {
             console.log('[Auth Debug] Password did not match any local configurations.');

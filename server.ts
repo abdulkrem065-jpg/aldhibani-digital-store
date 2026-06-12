@@ -6,6 +6,8 @@ import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import { Product, StoreConfig, Order, DebtRecord, StaffUser, CustomCategory, Banner } from './src/types';
+import { ImportService } from './server/importers/sqlite-importer/import-service';
+import { createAssistantRouter } from './server/modules/assistant/assistant.routes';
 
 dotenv.config();
 
@@ -57,7 +59,11 @@ async function insertAuditLog(action: string, operator: string, payload: any) {
         created_at: new Date().toISOString()
       });
       if (error) {
-        console.warn('[Audit Log] Failed to write in Supabase:', error.message);
+        if (error.message.includes('row-level security policy') || error.code === '42501') {
+          console.log(`[Audit Log Info] Bypassed Supabase audit insertion (restricted by database RLS rules). Log recorded in server memory fallback. Action: ${action}, Operator: ${operator}`);
+        } else {
+          console.log(`[Audit Log Notice] Supabase audit write skipped: ${error.message}`);
+        }
       } else {
         console.log('[Audit Log] Successfully written in Supabase:', action);
       }
@@ -84,7 +90,8 @@ function getLocalDefaultPasswordForRole(role: string): string {
 export const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 // In-Memory Database State
 const storeDatabase = {
@@ -108,318 +115,15 @@ const storeDatabase = {
     orgId: 'org-dhibani-vip',
   } as StoreConfig,
 
-  banners: [
-    {
-      id: 'bn-telecom',
-      organization_id: 'org-dhibani-vip',
-      title_ar: 'باقات شحن يمن موبايل وسبأفون الفورية بخصومات 10٪ 🔥',
-      title_en: 'Instant Recharges for Yemen Mobile & Sabafon with 10% Off 🔥',
-      image_url: 'https://images.unsplash.com/photo-1562408590-e32931084e23?w=1200&auto=format&fit=crop&q=80',
-      target_url: '/?category=DIGITAL_RECHARGE',
-      is_active: true,
-      sort_order: 1
-    },
-    {
-      id: 'bn-gaming',
-      organization_id: 'org-dhibani-vip',
-      title_ar: 'شحن شدات ببجي وجواهر فري فاير الفوري بأرخص الأسعار اليمني 🎮',
-      title_en: 'Instant PUBG UC & Free Fire Diamonds at the Best Rates 🎮',
-      image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&auto=format&fit=crop&q=80',
-      target_url: '/?category=DIGITAL_GAME',
-      is_active: true,
-      sort_order: 2
-    },
-    {
-      id: 'bn-electronics',
-      organization_id: 'org-dhibani-vip',
-      title_ar: 'أحدث الإلكترونيات والأجهزة الذكية بضمان حقيقي مستقر 💻',
-      title_en: 'Latest Smart Devices & Premium Electronics with Real Warranty 💻',
-      image_url: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=1200&auto=format&fit=crop&q=80',
-      target_url: '/?category=PHYSICAL_ELECTRONICS',
-      is_active: true,
-      sort_order: 3
-    }
-  ] as Banner[],
+  banners: [] as Banner[],
 
-  categories: [
-    { id: 'DIGITAL_RECHARGE', nameAR: 'فوري رصيد وباقات اتصالات', nameEN: 'Digital Recharges & Bundles', icon: 'Smartphone', color: 'from-slate-900 to-amber-950/20' },
-    { id: 'DIGITAL_GAME', nameAR: 'كروت ألعاب إلكترونية وشحن', nameEN: 'Cyber Play & Gaming Cards', icon: 'Gamepad2', color: 'from-slate-900 to-indigo-950/20' },
-    { id: 'PHYSICAL_GROCERY', nameAR: 'تموين ومواد حضرمية وعسل', nameEN: 'Gourmet Yemeni Groceries', icon: 'Apple', color: 'from-slate-900 to-emerald-950/20' },
-    { id: 'PHYSICAL_ELECTRONICS', nameAR: 'أجهزة ذكية وإلكترونيات فخمة', nameEN: 'Premium Smart Devices', icon: 'Laptop', color: 'from-slate-900 to-pink-950/20' }
-  ] as CustomCategory[],
+  categories: [] as CustomCategory[],
 
-  products: [
-    // Digital Recharges - Yemen Mobile
-    {
-      id: 'dg-ym-500',
-      nameAR: 'باقة يمن موبايل 500 ريال فوري',
-      nameEN: 'Yemen Mobile 500 Reissue Package',
-      descriptionAR: 'تعبئة وتنشيط فوري لرصيد يمن موبايل بقيمة 500 ريال يمني',
-      descriptionEN: 'Instant recharge for Yemen Mobile lines with 500 YER balance',
-      category: 'DIGITAL_RECHARGE',
-      brand: 'Yemen Mobile',
-      priceYER: 500,
-      imageUrl: 'https://images.unsplash.com/photo-1562408590-e32931084e23?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-      isAvailable: true,
-      rechargeAmount: '500 YER'
-    },
-    {
-      id: 'dg-ym-2000',
-      nameAR: 'باقة مزايا يمن موبايل 2000 ريال',
-      nameEN: 'Yemen Mobile Mazaya 2000 YER',
-      descriptionAR: 'باقة مزايا الشهرية الفورية: الإنترنت والاتصالات والرسائل مجانًا',
-      descriptionEN: 'Monthly custom package with calls, SMS, and high-speed internet',
-      category: 'DIGITAL_RECHARGE',
-      brand: 'Yemen Mobile',
-      priceYER: 2000,
-      imageUrl: 'https://images.unsplash.com/photo-1546054454-aa26e2b734c7?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-      isAvailable: true,
-      rechargeAmount: '2000 YER'
-    },
-    // Digital Recharges - Sabafon
-    {
-      id: 'dg-sb-500',
-      nameAR: 'شحن سبأفون سوبر 500 يمني',
-      nameEN: 'Sabafon Super 500 YER Recharge',
-      descriptionAR: 'شحن رصيد سبأفون الفوري مع باقة تفعيل المزايا المحدثة',
-      descriptionEN: 'Sabafon instant secure credit recharge of 500 YER',
-      category: 'DIGITAL_RECHARGE',
-      brand: 'Sabafon',
-      priceYER: 500,
-      imageUrl: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-      isAvailable: true,
-      rechargeAmount: '500 YER'
-    },
-    // Digital Recharges - YOU (MTN)
-    {
-      id: 'dg-you-1000',
-      nameAR: 'باقة يو فورجي 1000 ريال',
-      nameEN: 'YOU 4G 1000 YER Package',
-      descriptionAR: 'شحن سريع وباقات الجيل الرابع المتكاملة لشركة يو',
-      descriptionEN: 'High speed 4G internet bundle for YOU Yemen network',
-      category: 'DIGITAL_RECHARGE',
-      brand: 'YOU',
-      priceYER: 1000,
-      imageUrl: 'https://images.unsplash.com/photo-1523961131990-5ea7c61b2107?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-      isAvailable: true,
-      rechargeAmount: '1000 YER'
-    },
-    // Cyber Games
-    {
-      id: 'dg-g-pubg-660',
-      nameAR: 'شدات ببجي موبايل - 660 شدة UC',
-      nameEN: 'PUBG Mobile UC - 660 UC Package',
-      descriptionAR: 'شحن فوري برقم الآيدي للعبة ببجي موبايل، معتمد ومستقر 100%',
-      descriptionEN: 'Instant PUBG Mobile Unknown Cash voucher via Player ID',
-      category: 'DIGITAL_GAME',
-      brand: 'PUBG',
-      priceYER: 3400,
-      imageUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-      isAvailable: true,
-      rechargeAmount: '660 UC'
-    },
-    {
-      id: 'dg-g-ff-210',
-      nameAR: 'جواهر فري فاير - 210 جوهرة',
-      nameEN: 'Free Fire Diamonds - 210 Diamonds',
-      descriptionAR: 'جواهر فري فاير فورية لحساب العميل باستخدام معرف اللاعب المباشر',
-      descriptionEN: '210 Free Fire Diamonds added directly to your player profile',
-      category: 'DIGITAL_GAME',
-      brand: 'Free Fire',
-      priceYER: 1540,
-      imageUrl: 'https://images.unsplash.com/photo-1553481187-be93c21490a9?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-      isAvailable: true,
-      rechargeAmount: '210 Diamonds'
-    },
-    // Physical Grocery
-    {
-      id: 'ph-gr-honey',
-      nameAR: 'عسل سدر يمني ملكي فاخر (كيلو)',
-      nameEN: 'Royal Yemeni Sidr Honey Premium (1kg)',
-      descriptionAR: 'عسل سدر أصلي 100% مستخرج من مناحل حضرموت الطبيعية الشهيرة',
-      descriptionEN: '100% organic genuine Sidr honey harvested from the valleys of Hadramout',
-      category: 'PHYSICAL_GROCERY',
-      priceYER: 15000,
-      imageUrl: 'https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-      isAvailable: true,
-      stock: 45
-    },
-    {
-      id: 'ph-gr-tea',
-      nameAR: 'شاي السعيد النقي حبة كاملة',
-      nameEN: 'Al-Saeed Premium Whole Leaf Tea',
-      descriptionAR: 'علبة شاي يمني أصيل ذو نكهة فريدة وجودة عالية',
-      descriptionEN: 'Authentic rich flavor Yemeni blend whole-leaf black tea tin',
-      category: 'PHYSICAL_GROCERY',
-      priceYER: 1200,
-      imageUrl: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-      isAvailable: true,
-      stock: 120
-    },
-    {
-      id: 'ph-gr-powder',
-      nameAR: 'حليب الهناء بودرة مجفف (1.8 كجم)',
-      nameEN: 'Al-Hana Milk Powder (1.8 kg)',
-      descriptionAR: 'حليب كامل الدسم سريع الذوبان وفائق الجودة للعائلات',
-      descriptionEN: 'Premium instant full cream milk powder for daily nutrition',
-      category: 'PHYSICAL_GROCERY',
-      priceYER: 8500,
-      imageUrl: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-      isAvailable: true,
-      stock: 80
-    },
-    // Physical Electronics
-    {
-      id: 'ph-el-router',
-      nameAR: 'مودم واي فاي يمن موبايل 4G محمول',
-      nameEN: 'Yemen Mobile 4G Portable Wifi Router',
-      descriptionAR: 'جهاز بث واي فاي ذكي لاسلكي فائق السرعة يدعم تغطية 4G القوية للمؤسسات والمنازل',
-      descriptionEN: 'Pocket high-speed 4G LTE portable hotspot router for perfect nationwide connectivity',
-      category: 'PHYSICAL_ELECTRONICS',
-      priceYER: 24000,
-      imageUrl: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-      isAvailable: true,
-      stock: 15
-    },
-    {
-      id: 'ph-el-power',
-      nameAR: 'خازن شحن انكر ذكي 20000 مللي أمبير',
-      nameEN: 'Anker PowerCore Powerbank 20000mAh',
-      descriptionAR: 'بطارية شحن مدمجة بسعة ضخمة وشحن ذكي آمن فائق السرعة لتفادي انقطاع الكهرباء',
-      descriptionEN: 'Ultra-safe multi-port quick charge smart powerbank to survive power cuts',
-      category: 'PHYSICAL_ELECTRONICS',
-      priceYER: 13500,
-      imageUrl: 'https://images.unsplash.com/photo-1609592424109-dd0369877b08?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-      isAvailable: true,
-      stock: 22
-    }
-  ] as Product[],
+  products: [] as Product[],
 
-  orders: [
-    {
-      id: 'DHB-ORD-99150',
-      items: [
-        {
-          product: {
-            id: 'dg-ym-500',
-            nameAR: 'باقة يمن موبايل 500 ريال فوري',
-            nameEN: 'Yemen Mobile 500 Reissue Package',
-            category: 'DIGITAL_RECHARGE',
-            priceYER: 0,
-            imageUrl: '',
-            isAvailable: true
-          } as Product,
-          quantity: 1,
-          rechargeDetails: { phoneNumber: '770493341' }
-        }
-      ],
-      totalYER: 0,
-      currency: 'YER',
-      status: 'PENDING',
-      createdAt: '2026-06-04T21:19:01.000Z',
-      customerName: 'عبدالكريم',
-      customerPhone: '770493341',
-      paymentMethod: 'جوالي 770493341',
-      cashierId: 'cashier'
-    },
-    {
-      id: 'DHB-ORD-61414',
-      items: [
-        {
-          product: {
-            id: 'dg-ym-500',
-            nameAR: 'باقة يمن موبايل 500 ريال فوري',
-            nameEN: 'Yemen Mobile 500 Reissue Package',
-            category: 'DIGITAL_RECHARGE',
-            priceYER: 0,
-            imageUrl: '',
-            isAvailable: true
-          } as Product,
-          quantity: 1,
-          rechargeDetails: { phoneNumber: '72776392' }
-        }
-      ],
-      totalYER: 0,
-      currency: 'YER',
-      status: 'COMPLETED',
-      createdAt: '2026-06-04T20:40:14.000Z',
-      customerName: 'عبدالكريم',
-      customerPhone: '72776392',
-      paymentMethod: 'جوالي 770493341',
-      cashierId: 'cashier'
-    },
-    {
-      id: 'DHB-ORD-59523',
-      items: [
-        {
-          product: {
-            id: 'dg-ym-500',
-            nameAR: 'باقة يمن موبايل 500 ريال فوري',
-            nameEN: 'Yemen Mobile 500 Reissue Package',
-            category: 'DIGITAL_RECHARGE',
-            priceYER: 1,
-            imageUrl: '',
-            isAvailable: true
-          } as Product,
-          quantity: 1,
-          rechargeDetails: { phoneNumber: '772776392' }
-        }
-      ],
-      totalYER: 1,
-      currency: 'YER',
-      status: 'PENDING',
-      createdAt: '2026-06-04T15:53:15.000Z',
-      customerName: 'يونس',
-      customerPhone: '772776392',
-      paymentMethod: 'جوالي 770493341',
-      cashierId: 'cashier'
-    },
-    {
-      id: 'DHB-ORD-55780',
-      items: [
-        {
-          product: {
-            id: 'dg-ym-500',
-            nameAR: 'باقة يمن موبايل 500 ريال فوري',
-            nameEN: 'Yemen Mobile 500 Reissue Package',
-            category: 'DIGITAL_RECHARGE',
-            priceYER: 1,
-            imageUrl: '',
-            isAvailable: true
-          } as Product,
-          quantity: 1,
-          rechargeDetails: { phoneNumber: '772776392' }
-        }
-      ],
-      totalYER: 1,
-      currency: 'YER',
-      status: 'PENDING',
-      createdAt: '2026-06-04T21:12:37.000Z',
-      customerName: 'عبدالكريم',
-      customerPhone: '772776392',
-      paymentMethod: 'جوالي 770493341',
-      cashierId: 'cashier'
-    }
-  ] as Order[],
+  orders: [] as Order[],
 
-  debts: [
-    {
-      id: 'debt-1',
-      customerName: 'أبو أحمد الهمداني',
-      customerPhone: '770992200',
-      totalDebtYER: 42000,
-      notes: 'متبقي حساب مودم واي فاي وشواحن سابقة للمكتب',
-      updatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
-    },
-    {
-      id: 'debt-2',
-      customerName: 'المهندس أمين الريمي',
-      customerPhone: '711228833',
-      totalDebtYER: 12500,
-      notes: 'رصيد آجل يمن موبايل وباقة إنترنت 4G',
-      updatedAt: new Date().toISOString()
-    }
-  ] as DebtRecord[],
+  debts: [] as DebtRecord[],
 
   staffUsers: [
     {
@@ -508,8 +212,8 @@ app.post('/api/auth/login', async (req, res) => {
               // Lazy Hash upgrade
               if (!matched.password_hash && matched.password === password) {
                 const hash = hashPassword(password);
-                await supabase.from('staff_users').update({ password_hash: hash }).eq('id', matched.id);
-                console.log(`[Supabase Lazy Hash Upgrade] Password upgraded to password_hash successfully for ${username}!`);
+                await supabase.from('staff_users').update({ password_hash: hash, password: null }).eq('id', matched.id);
+                console.log(`[Supabase Lazy Hash Upgrade] Password upgraded to password_hash cleanly for ${username}!`);
               }
             }
           }
@@ -1861,6 +1565,8 @@ Ensure your response is valid JSON only. Do not output markdown codeblocks aroun
   }
 });
 
+app.use('/api/assistant', createAssistantRouter(storeDatabase, supabase));
+
 // AI CHATBOT AGENT ENDPOINT WITH ACCESS TO PRODUCTS AND ORDER STRUCTURE
 app.post('/api/gemini/chat', async (req, res) => {
   const { prompt, history, language } = req.body;
@@ -1989,6 +1695,155 @@ ${catalogString}
   } catch (error: any) {
     console.error("Server API Gemini Error: ", error);
     res.status(500).json({ error: error.message || 'خطأ أثناء الاتصال بمحرك الذكاء الاصطناعي.' });
+  }
+});
+
+// ----------------------------------------------------
+// 🏠 SMART DATA IMPORT ENGINE (MIGRATION CENTRAL APIs)
+// ----------------------------------------------------
+
+// 1. POST /api/import/upload - Receives SQLite backup file
+app.post('/api/import/upload', async (req, res) => {
+  try {
+    let buffer: Buffer | null = null;
+    if (req.body && req.body.fileBase64) {
+      buffer = Buffer.from(req.body.fileBase64, 'base64');
+    } else {
+      // Stream raw binary body chunks
+      const chunks: Buffer[] = [];
+      await new Promise<void>((resolve, reject) => {
+        req.on('data', (chunk) => chunks.push(chunk));
+        req.on('end', () => {
+          buffer = Buffer.concat(chunks);
+          resolve();
+        });
+        req.on('error', (err) => reject(err));
+      });
+    }
+
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({ error: 'لم يتم استلام أي حزم بيانات صالحة للملف.' });
+    }
+
+    const service = ImportService.getInstance();
+    const uploadResult = await service.saveUpload(buffer);
+    
+    await insertAuditLog('DATA_MIGRATION_FILE_UPLOAD', req.body?.operator || 'ADMIN', {
+      fileSize: uploadResult.fileSize,
+      tablesCount: uploadResult.tablesCount
+    });
+
+    res.json(uploadResult);
+  } catch (err: any) {
+    console.error('[Import API] Upload failed:', err.message);
+    res.status(500).json({ error: err.message || 'فشل رفع وحفظ ملف النسخة الاحتياطية.' });
+  }
+});
+
+// 2. POST /api/import/analyze - Scans table stats and validates maps
+app.post('/api/import/analyze', async (req, res) => {
+  try {
+    const service = ImportService.getInstance();
+    const analysis = await service.analyzeBackup();
+    
+    await insertAuditLog('DATA_MIGRATION_ANALYZE', req.body?.operator || 'ADMIN', {
+      stats: analysis.stats
+    });
+
+    res.json(analysis);
+  } catch (err: any) {
+    console.error('[Import API] Analysis failed:', err.message);
+    res.status(500).json({ error: err.message || 'فشل تحليل ملف قاعدة البيانات الاحتياطية.' });
+  }
+});
+
+// 3. POST /api/import/preview - Fetches transformed sample records
+app.post('/api/import/preview', async (req, res) => {
+  try {
+    const limit = Number(req.body?.limit) || 5;
+    const service = ImportService.getInstance();
+    const preview = await service.previewRecords(limit);
+    res.json(preview);
+  } catch (err: any) {
+    console.error('[Import API] Preview failed:', err.message);
+    res.status(500).json({ error: err.message || 'فشل توليد معاينة لتسجيلات الفحص.' });
+  }
+});
+
+// 4. POST /api/import/start - Kicks off the ETL background task
+app.post('/api/import/start', async (req, res) => {
+  try {
+    const { orgId, branchId, operator } = req.body;
+    const currentOrg = orgId || 'org_vip_dhibani';
+    const currentBranch = branchId || 'branch_01';
+    const currentOperator = operator || 'ADMIN';
+
+    const service = ImportService.getInstance();
+    
+    const jobId = service.startImport(
+      currentOrg,
+      currentBranch,
+      currentOperator,
+      supabase,       // server-side Supabase client reference
+      storeDatabase   // in-memory reactive database state definition
+    );
+
+    await insertAuditLog('DATA_MIGRATION_START_JOB', currentOperator, {
+      jobId,
+      orgId: currentOrg,
+      branchId: currentBranch
+    });
+
+    res.json({
+      success: true,
+      jobId,
+      message: 'بدأت عملية التحويل والهجرة في الخلفية بنجاح 🟢. يرجى تتبع المعرف المستجاب.'
+    });
+  } catch (err: any) {
+    console.error('[Import API] Job start failed:', err.message);
+    res.status(500).json({ error: err.message || 'فشل تشغيل محرك تحرير وهجرة السجلات.' });
+  }
+});
+
+// 5. GET /api/import/status/:jobId - Track async progress
+app.get('/api/import/status/:jobId', (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const service = ImportService.getInstance();
+    const job = service.getJob(jobId);
+
+    if (!job) {
+      return res.status(404).json({ error: 'لم يتم العثور على أي مهمة هجرة بالمعرف المرفق.' });
+    }
+
+    res.json(job);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'فشل الاستعلام عن حالة عملية الاستيراد.' });
+  }
+});
+
+// 6. GET /api/import/report/:jobId - Fetch final report logs
+app.get('/api/import/report/:jobId', (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const service = ImportService.getInstance();
+    const job = service.getJob(jobId);
+
+    if (!job) {
+      return res.status(404).json({ error: 'لم يتم العثور على التقرير المطلوب بالمعرف الموصوف.' });
+    }
+
+    res.json({
+      id: job.id,
+      status: job.status,
+      info: job.info,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+      summary: job.summary || null,
+      errors: job.errors || []
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'فشل سحب تقارير مهمة الاستيراد.' });
   }
 });
 
