@@ -12,6 +12,7 @@ export class AssistantCoreService {
     prompt: string;
     conversationId: string;
     mode: AssistantMode;
+    contextMode?: 'SHOPPER' | 'BUSINESS';
     orgId?: string;
     language?: 'AR' | 'EN';
     userRole?: string;
@@ -27,6 +28,7 @@ export class AssistantCoreService {
       prompt,
       conversationId,
       mode,
+      contextMode,
       orgId,
       language = 'AR',
       userRole = 'GUEST',
@@ -34,22 +36,41 @@ export class AssistantCoreService {
       supabase
     } = params;
 
+    // Apply strict contextMode mapping and isolation
+    let activeMode = mode;
+    if (contextMode === 'SHOPPER') {
+      activeMode = 'GENERAL';
+    } else if (contextMode === 'BUSINESS') {
+      activeMode = 'BUSINESS';
+    }
+
     // 1. Compile System Instructions based on Active Chat Mode
     let systemInstruction = '';
     let dbContext = '';
 
     // Level 1: Public Assistant
-    if (mode === 'GENERAL') {
+    if (activeMode === 'GENERAL') {
       systemInstruction = this.getGeneralSystemPrompt(language);
     } 
     // Level 2: Business Assistant (isolated by multi-tenant org_id)
-    else if (mode === 'BUSINESS') {
+    else if (activeMode === 'BUSINESS') {
+      // Securely enforce shopper lock
+      if (contextMode === 'SHOPPER') {
+        return {
+          reply: language === 'AR' 
+            ? 'عذراً، مستوى الإدارة ومساعد الأعمال مخصص للموظفين حاملي الصلاحيات فقط.' 
+            : 'Access Denied: Business Mode is reserved for authorized staff users only.',
+          conversationId,
+          modeUsed: 'OFFLINE_INTELLIGENCE',
+          systemMode: 'GENERAL'
+        };
+      }
       // Fetch relevant DB Context
       dbContext = await AssistantContextCompiler.compileContext(prompt, storeDatabase, supabase, orgId);
       systemInstruction = this.getBusinessSystemPrompt(language, orgId, dbContext);
     } 
     // Level 3: Executive AI (High-Privilege Admin Mode Architecture)
-    else if (mode === 'ADMIN') {
+    else if (activeMode === 'ADMIN') {
       // Enforce Admin / Owner authorizations
       if (userRole !== 'ADMIN' && userRole !== 'OWNER' && userRole !== 'MANAGER') {
         return {
@@ -73,8 +94,10 @@ export class AssistantCoreService {
       };
     } 
     // Level 2 Extension: FAQ, digital cards activation support
-    else if (mode === 'SUPPORT') {
-      // Support mode uses general store policies, digital activation FAQs, etc.
+    else if (activeMode === 'SUPPORT') {
+      if (contextMode === 'BUSINESS') {
+        activeMode = 'BUSINESS';
+      }
       systemInstruction = this.getSupportSystemPrompt(language);
     }
 
@@ -99,7 +122,7 @@ export class AssistantCoreService {
       reply: bridgeResult.text,
       conversationId,
       modeUsed: bridgeResult.mode,
-      systemMode: mode
+      systemMode: activeMode
     };
   }
 

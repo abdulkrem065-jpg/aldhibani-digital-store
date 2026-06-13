@@ -14,6 +14,7 @@ export class AssistantController {
         prompt, 
         conversationId = 'session_guest_default', 
         mode = 'GENERAL', 
+        contextMode, // 'SHOPPER' | 'BUSINESS'
         language = 'AR',
         orgId,
         userRole = 'GUEST'
@@ -32,6 +33,7 @@ export class AssistantController {
         prompt: prompt.trim(),
         conversationId,
         mode: mode as AssistantMode,
+        contextMode: contextMode as 'SHOPPER' | 'BUSINESS' | undefined,
         orgId: resolvedOrgId,
         language: language === 'EN' ? 'EN' : 'AR',
         userRole,

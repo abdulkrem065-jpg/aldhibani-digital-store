@@ -3,7 +3,6 @@ import { AssistantMode, AssistantMessage } from '../types/assistant.types';
 import { AssistantService } from '../services/assistantService';
 
 interface AssistantContextType {
-  conversationId: string;
   mode: AssistantMode;
   messages: AssistantMessage[];
   loading: boolean;
@@ -12,19 +11,20 @@ interface AssistantContextType {
   sendMessage: (prompt: string, userRole?: string, orgId?: string, forceLanguage?: 'AR' | 'EN') => Promise<void>;
   submitFeedback: (rating: number, comment?: string, orgId?: string) => Promise<boolean>;
   clearSession: () => void;
+  conversationId: string;
 }
 
 const AssistantContext = createContext<AssistantContextType | undefined>(undefined);
 
 export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [conversationId, setConversationId] = useState<string>('');
   const [mode, setModeState] = useState<AssistantMode>('GENERAL');
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const [conversationId, setConversationId] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize unique session or load it from local storage
   useEffect(() => {
+    // Initialize unique session or load it from local storage
     let savedId = localStorage.getItem('smart_assistant_session_id');
     if (!savedId) {
       savedId = `session_ss_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`;
@@ -32,16 +32,29 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
     setConversationId(savedId);
 
-    // Load local cache of messages to keep fast UX on page refresh
-    const savedMsgs = localStorage.getItem(`msgs_${savedId}`);
-    if (savedMsgs) {
+    // Fetch history from local storage or API
+    const loadInitialHistory = async () => {
       try {
-        setMessages(JSON.parse(savedMsgs));
+        setLoading(true);
+        const savedMsgs = localStorage.getItem(`msgs_${savedId}`);
+        if (savedMsgs) {
+          try {
+            setMessages(JSON.parse(savedMsgs));
+          } catch (err) {
+            console.error('Failed to parse saved chat messages:', err);
+            setDefaultWelcome();
+          }
+        } else {
+          setDefaultWelcome();
+        }
       } catch (e) {
-        console.error('Failed to parse cached assistant messages:', e);
+        console.error('Failed to load initial history:', e);
+      } finally {
+        setLoading(false);
       }
-    } else {
-      // Direct welcome message matching the active theme
+    };
+
+    const setDefaultWelcome = () => {
       const introMsg: AssistantMessage = {
         id: 'welcome',
         role: 'model',
@@ -57,28 +70,12 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         timestamp: new Date().toISOString()
       };
       setMessages([introMsg]);
+    };
+
+    if (savedId) {
+      loadInitialHistory();
     }
   }, []);
-
-  // Sync messages list changes to local caching layer
-  useEffect(() => {
-    if (conversationId && messages.length > 0) {
-      localStorage.setItem(`msgs_${conversationId}`, JSON.stringify(messages));
-    }
-  }, [messages, conversationId]);
-
-  const setMode = (newMode: AssistantMode) => {
-    setModeState(newMode);
-    
-    // Add custom helper context notification message in the chat
-    const alertMsg: AssistantMessage = {
-      id: `alert_${Date.now()}`,
-      role: 'system',
-      content: getModeAlertContent(newMode),
-      timestamp: new Date().toISOString()
-    };
-    setMessages(prev => [...prev, alertMsg]);
-  };
 
   const getModeAlertContent = (m: AssistantMode): string => {
     switch (m) {
@@ -93,16 +90,32 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  const setMode = (newMode: AssistantMode) => {
+    setModeState(newMode);
+    
+    const alertMsg: AssistantMessage = {
+      id: `alert_${Date.now()}`,
+      role: 'system',
+      content: getModeAlertContent(newMode),
+      timestamp: new Date().toISOString()
+    };
+    setMessages((prev) => {
+      const updated = [...prev, alertMsg];
+      localStorage.setItem(`msgs_${conversationId}`, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   const sendMessage = async (
-    prompt: string, 
-    userRole: string = 'GUEST', 
-    orgId?: string, 
+    prompt: string,
+    userRole: string = 'GUEST',
+    orgId?: string,
     forceLanguage: 'AR' | 'EN' = 'AR'
   ) => {
     if (!prompt.trim()) return;
 
-    setError(null);
     setLoading(true);
+    setError(null);
 
     const userMessage: AssistantMessage = {
       id: `user_${Date.now()}`,
@@ -111,15 +124,20 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       timestamp: new Date().toISOString()
     };
 
+    const pendingBotId = `bot_pending_${Date.now()}`;
     const pendingBotMessage: AssistantMessage = {
-      id: `bot_pending_${Date.now()}`,
+      id: pendingBotId,
       role: 'model',
       content: 'جاري مراجعة طلبك وصياغة الرد...',
       timestamp: new Date().toISOString(),
       isPending: true
     };
 
-    setMessages(prev => [...prev, userMessage, pendingBotMessage]);
+    setMessages((prev) => {
+      const updated = [...prev, userMessage, pendingBotMessage];
+      localStorage.setItem(`msgs_${conversationId}`, JSON.stringify(updated));
+      return updated;
+    });
 
     try {
       const result = await AssistantService.sendMessage({
@@ -131,33 +149,37 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         orgId
       });
 
-      // Swap out the pending message with the real one
-      setMessages(prev => {
-        const filtered = prev.filter(m => m.id !== pendingBotMessage.id);
-        const realBotMessage: AssistantMessage = {
-          id: `bot_${Date.now()}`,
-          role: 'model',
-          content: result.reply,
-          timestamp: new Date().toISOString(),
-          modeUsed: result.modeUsed
-        };
-        return [...filtered, realBotMessage];
+      const realBotMessage: AssistantMessage = {
+        id: `bot_${Date.now()}`,
+        role: 'model',
+        content: result.reply,
+        timestamp: new Date().toISOString(),
+        modeUsed: result.modeUsed
+      };
+
+      setMessages((prev) => {
+        const updated = prev.map((m) => m.id === pendingBotId ? realBotMessage : m);
+        localStorage.setItem(`msgs_${conversationId}`, JSON.stringify(updated));
+        return updated;
       });
+      setLoading(false);
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'فشل الاتصال بمخدم المساعد الذكي.');
-      
-      setMessages(prev => {
-        const filtered = prev.filter(m => m.id !== pendingBotMessage.id);
-        const errorBotMessage: AssistantMessage = {
-          id: `bot_err_${Date.now()}`,
-          role: 'model',
-          content: `⚠️ للأسف، تعذر إتمام طلبك بنجاح بسبب وجود خطأ في الاتصال بالسيرفر. يرجى إعادة المحاولة لاحقاً.\n\n*تفاصيل الخطأ: ${err.message || 'Network Fail'}*`,
-          timestamp: new Date().toISOString()
-        };
-        return [...filtered, errorBotMessage];
+      console.error('AI Service Error:', err);
+      const errorText = err.message || 'فشل الاتصال بمخدم المساعد الذكي.';
+      setError(errorText);
+
+      const errorBotMessage: AssistantMessage = {
+        id: `bot_err_${Date.now()}`,
+        role: 'model',
+        content: `⚠️ للأسف، تعذر إتمام طلبك بنجاح بسبب وجود خطأ في الاتصال بالسيرفر. يرجى إعادة المحاولة لاحقاً.\n\n*تفاصيل الخطأ: ${errorText}*`,
+        timestamp: new Date().toISOString()
+      };
+
+      setMessages((prev) => {
+        const updated = prev.map((m) => m.id === pendingBotId ? errorBotMessage : m);
+        localStorage.setItem(`msgs_${conversationId}`, JSON.stringify(updated));
+        return updated;
       });
-    } finally {
       setLoading(false);
     }
   };
@@ -182,9 +204,9 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       localStorage.removeItem(`msgs_${conversationId}`);
     }
     const newId = `session_ss_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`;
-    localStorage.setItem('smart_assistant_session_id', newId);
     setConversationId(newId);
-    
+    localStorage.setItem('smart_assistant_session_id', newId);
+
     const introMsg: AssistantMessage = {
       id: 'welcome',
       role: 'model',
@@ -200,7 +222,6 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   return (
     <AssistantContext.Provider value={{
-      conversationId,
       mode,
       messages,
       loading,
@@ -208,7 +229,8 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setMode,
       sendMessage,
       submitFeedback,
-      clearSession
+      clearSession,
+      conversationId
     }}>
       {children}
     </AssistantContext.Provider>

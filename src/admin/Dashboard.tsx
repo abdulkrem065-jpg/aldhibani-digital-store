@@ -20,7 +20,7 @@ import {
   getSavedItem, saveItem, 
   DEFAULT_STORE_CONFIG, DEFAULT_CATEGORIES, DEFAULT_PRODUCTS, DEFAULT_ORDERS, DEFAULT_DEBTS 
 } from '../data/defaultData';
-import { SupabaseServerlessDB, MoneyBox, YouthWorkforceProfile } from '../lib/supabase';
+import { SupabaseServerlessDB, MoneyBox, YouthWorkforceProfile, supabase } from '../lib/supabase';
 import DataMigration from './DataMigration';
 
 interface DashboardProps {
@@ -352,6 +352,7 @@ export default function Dashboard({
   const [wizardBackupFileName, setWizardBackupFileName] = useState<string>(() => {
     return localStorage.getItem('import_wizard_backup_filename') || '';
   });
+  const [selectedBackupFile, setSelectedBackupFile] = useState<File | null>(null);
   const [wizardGdriveEmail, setWizardGdriveEmail] = useState<string>(() => {
     return localStorage.getItem('import_wizard_gdrive_email') || '';
   });
@@ -899,9 +900,141 @@ export default function Dashboard({
   };
 
   // Trigger External System Integration Synchronization Simulator (Retrieves / Mappings)
-  const triggerExternalIntegrationSync = () => {
+  const triggerExternalIntegrationSync = async () => {
     setIsSyncing(true);
     setSyncSuccess(false);
+
+    // If it's a backup-file upload and we have a real file selected, do the REAL upload & pipeline trigger!
+    if (selectedMethod === 'backup' && selectedBackupFile) {
+      setSyncLogs([
+        `🚀 [بدء رفع سحابي آمن] جاري فحص ملف قاعدة البيانات: ${selectedBackupFile.name} (${(selectedBackupFile.size / 1024 / 1024).toFixed(2)} MB)...`,
+        `📡 [علاقة سحابية] جاري إنشاء معقد الاتصال المباشر وخادم Supabase Storage لرفع الملف...`
+      ]);
+
+      try {
+        if (!supabase) {
+          throw new Error(language === 'AR' ? 'سحابة Supabase غير متصلة حالياً. يرجى تهيئة مفاتيح الربط في لوحة الإعدادات لتفعيل البث السحابي الحقيقي.' : 'Supabase integration is not active. Please declare client configuration keys to leverage real cloud SQLite streaming imports.');
+        }
+        const organization_id = config.orgId || 'org_vip_dhibani';
+        const branch_id = config.branchId || 'branch_01';
+        const timestamp = Date.now();
+        const filePath = `${organization_id}/${branch_id}/${timestamp}_${selectedBackupFile.name}`;
+
+        // 1. Upload to Supabase Storage Bucket ('backups')
+        const { data, error } = await supabase.storage
+          .from('backups')
+          .upload(filePath, selectedBackupFile, {
+            cacheControl: '3600',
+            upsert: true
+          });
+
+        if (error) {
+          throw new Error(`فشل رفع الملف إلى Supabase Storage: ${error.message}`);
+        }
+
+        setSyncLogs(prev => [
+          ...prev,
+          `✅ [الرفع ناجح] تم تحميل ملف قاعدة البيانات بنجاح إلى دلو التخزين: bucket: "backups" / path: "${filePath}".`,
+          `🔗 [تحليل معجل للرابط] جاري توليد رابط الرفع المباشر...`
+        ]);
+
+        // 2. Get the public file URL
+        const { data: { publicUrl } } = supabase.storage.from('backups').getPublicUrl(filePath);
+
+        setSyncLogs(prev => [
+          ...prev,
+          `🌐 [رابط سحابي] الرابط المعتمد: ${publicUrl.substring(0, 70)}...`,
+          `📡 [استدعاء البث] جاري إرسال طلب استيراد وبث السجلات (/api/import/sqlite) دون تحميل الذاكرة...`
+        ]);
+
+        // 3. Post to streaming endpoint '/api/import/sqlite'
+        const res = await fetch('/api/import/sqlite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileUrl: publicUrl,
+            orgId: organization_id,
+            branchId: branch_id,
+            operator: 'ADMIN'
+          })
+        });
+
+        const importData = await res.json();
+        if (!res.ok || !importData.success) {
+          throw new Error(importData.error || 'تم رصد مشكلة أثناء ترحيل حزم البيانات في محرك السيرفر.');
+        }
+
+        const jobId = importData.jobId;
+        setSyncLogs(prev => [
+          ...prev,
+          `🟢 [بدء مهمة الخلفية] تم الجدولة بنجاح! معرّف مهمة الاستيراد (Job ID): "${jobId}".`,
+          `🔄 [تتبع حي] جاري الاتصال بغرفة تتبع أحداث البث وسجلات المعالج...`
+        ]);
+
+        // 4. Start polling for job status & events periodically
+        let count = 0;
+        const intervalId = setInterval(async () => {
+          try {
+            count++;
+            const statusRes = await fetch(`/api/import/status/${jobId}?orgId=${organization_id}`);
+            if (!statusRes.ok) return;
+            const statusData = await statusRes.json();
+            
+            // Collect any progress or state messages
+            const infoMessage = statusData.info || 'جاري استيراد وحفظ السجلات...';
+            const progress = statusData.progress || 0;
+            const status = statusData.status || 'pending';
+
+            setSyncLogs(prev => {
+              const clean = [...prev];
+              const logMsg = `🔄 [الحالة ${progress}%]: ${infoMessage}`;
+              if (!clean.includes(logMsg)) {
+                clean.push(logMsg);
+              }
+              return clean;
+            });
+
+            if (status === 'success') {
+              clearInterval(intervalId);
+              setSyncLogs(prev => [
+                ...prev,
+                `🎉 [اكتمال كامل] تم استيراد جميع الفئات والمنتجات والديون والفواتير القديمة بنجاح من جهاز SQLite للتجارة!`,
+                `📈 [إحصائيات الإدخالات]: الفئات: ${statusData.summary?.categories || 0} | المنتجات: ${statusData.summary?.products || 0} | الديون: ${statusData.summary?.customers || 0} | فواتير الطلبات: ${statusData.summary?.orders || 0}`,
+                `✅ [نشط بنجاح] منصة الذيباني VIP محدثة بالكامل الآن بجميع رصيد وسلبيات الجرد السابق!`
+              ]);
+              setIsSyncing(false);
+              setSyncSuccess(true);
+              refreshAllData();
+            } else if (status === 'failed') {
+              clearInterval(intervalId);
+              setSyncLogs(prev => [
+                ...prev,
+                `❌ [فشل الاستيراد في الوجبات]: ${statusData.info || 'وقع خطأ أثناء معالجة فئات أو منتجات قاعدة البيانات.'}`,
+                `⚠️ تم تفعيل بروتوكول التراجع التلقائي (Auto-Rollback) السليم بنجاح لتطهير أي روابط تالفة ومحافظة على العزل.`
+              ]);
+              setIsSyncing(false);
+            } else if (count > 80) { // Timeout after 120 seconds
+              clearInterval(intervalId);
+              setSyncLogs(prev => [...prev, `⚠️ [تنبيه] تجاوز تتبع المهمة الوقت المخصص (120 ثانية)، لكن المعالج مستمر في العمل في الخلفية.`]);
+              setIsSyncing(false);
+            }
+          } catch (pollingErr) {
+            console.error('Error during status polling:', pollingErr);
+          }
+        }, 1500);
+
+      } catch (err: any) {
+        setSyncLogs(prev => [
+          ...prev,
+          `⛔ [خطأ فادح في معالج الرابط]: ${err.message || err}`,
+          `❌ [فشل] لم تتم مزامنة الملف لعدم اكتمال المتطلبات السحابية.`
+        ]);
+        setIsSyncing(false);
+      }
+      return;
+    }
+
+    // fallback simulation path
     setSyncLogs([
       `🚀 [بدء المزامنة] جاري التحقق من مسار التوصيل للنوع المحدد: ${config.integrationType || 'ANDROID'}...`,
       `📡 [توصيل] جاري إرسال طلب التخاطب والمصافحة الرقمية لمستودعات الذيباني...`
@@ -938,7 +1071,6 @@ export default function Dashboard({
     setTimeout(() => {
       const type = config.integrationType || 'ANDROID';
       
-      // All 4 wizard-featured preview products shown in the step 6 preview list
       const wizardPreviewProducts: Product[] = [
         {
           id: '101A',
@@ -1061,7 +1193,6 @@ export default function Dashboard({
         };
       }
 
-      // Save all products to the database
       wizardPreviewProducts.forEach(p => {
         SupabaseServerlessDB.saveProduct(p);
       });
@@ -5570,56 +5701,100 @@ export default function Dashboard({
                           if (e.dataTransfer.files && e.dataTransfer.files[0]) {
                             const file = e.dataTransfer.files[0];
                             setWizardBackupFileName(file.name);
+                            setSelectedBackupFile(file);
                             localStorage.setItem('import_wizard_backup_filename', file.name);
                           }
                         }}
-                        className={`border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
+                        className={`border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center text-center transition-all ${
                           dragActive 
                             ? 'border-indigo-400 bg-indigo-950/20 shadow-inner' 
                             : wizardBackupFileName
                             ? 'border-emerald-500/50 bg-emerald-950/10'
                             : 'border-slate-800 bg-slate-950 hover:border-slate-700'
                         }`}
-                        onClick={() => {
-                          const mockFiles = [
-                            'Dhibani_Mohaseb_Retail_Backup_2026.sqlite',
-                            'Alameen_Warehouse_Snapshot.db',
-                            'YemenSoft_InvoiceExporter.zip',
-                            'DhibaniGrocery_Retail_Jard.sqlite'
-                          ];
-                          const randomFile = mockFiles[Math.floor(Math.random() * mockFiles.length)];
-                          setWizardBackupFileName(randomFile);
-                          localStorage.setItem('import_wizard_backup_filename', randomFile);
-                        }}
                       >
+                        <input 
+                          type="file"
+                          id="real-sqlite-file-input"
+                          accept=".sqlite,.db"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              const file = e.target.files[0];
+                              setWizardBackupFileName(file.name);
+                              setSelectedBackupFile(file);
+                              localStorage.setItem('import_wizard_backup_filename', file.name);
+                            }
+                          }}
+                        />
+
                         {wizardBackupFileName ? (
                           <div className="space-y-3">
-                            <span className="text-3xl">🎉 📦</span>
+                            <span className="text-3xl">🎉 {selectedBackupFile ? '💾' : '📦'}</span>
                             <p className="text-xs text-white font-black">{wizardBackupFileName}</p>
                             <div className="flex items-center gap-1.5 justify-center">
                               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                              <span className="text-[10px] text-emerald-400 font-bold">{language === 'AR' ? 'تم قراءة الملف وتأكيد الهيكل بنجاح!' : 'Prepared for database scan & mapping analysis'}</span>
+                              <span className="text-[10px] text-emerald-400 font-bold">
+                                {selectedBackupFile 
+                                  ? (language === 'AR' ? 'تم اختيار ملف حقيقي وجاهز للرفع الفعلي!' : 'Real file selected & ready for cloud streaming')
+                                  : (language === 'AR' ? 'تم قراءة الملف التجريبي بنجاح!' : 'Simulated backup loaded successfully')}
+                              </span>
                             </div>
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setWizardBackupFileName('');
+                                setSelectedBackupFile(null);
                                 localStorage.removeItem('import_wizard_backup_filename');
                               }}
-                              className="bg-red-950/60 hover:bg-red-900 border border-red-500/10 text-red-400 text-[10px] px-3 py-1 rounded-xl transition-all"
+                              className="bg-red-950/60 hover:bg-red-900 border border-red-500/10 text-red-400 text-[10px] px-3 py-1 rounded-xl transition-all cursor-pointer"
                             >
                               {language === 'AR' ? 'مسح واختيار ملف آخر 🗑' : 'Clear and upload another'}
                             </button>
                           </div>
                         ) : (
-                          <div className="space-y-3 font-sans">
-                            <span className="text-3xl text-slate-600">📥</span>
+                          <div className="space-y-4 font-sans w-full">
+                            <span className="text-3xl text-slate-600 block">📥</span>
                             <p className="text-xs text-slate-300 font-bold">
-                              {language === 'AR' ? 'اسحب ملف قاعدة البيانات وضعه هنا، أو انقر للتصفح التلقائي والمحاكاة فورا!' : 'Drag & drop your database backup here, or click to choose from directory'}
+                              {language === 'AR' ? 'اسحب ملف قاعدة البيانات وضعه هنا' : 'Drag & drop your database backup here'}
                             </p>
-                            <p className="text-[9.5px] text-slate-500 max-w-sm">
-                              {language === 'AR' ? '💡 لتجربة ميزات المعالج، اضغط في أي مكان داخل هذا المربع لتحميل ملف محاكاة فوري بنجاح.' : '💡 For live prototyping purposes, tapping will auto-simulate a matched inventory.'}
+                            
+                            <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 pt-2">
+                              {/* Option A: Real file selection */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  document.getElementById('real-sqlite-file-input')?.click();
+                                }}
+                                className="bg-indigo-650 hover:bg-indigo-600 text-white text-[11px] font-black px-4.5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-indigo-950/50 cursor-pointer"
+                              >
+                                {language === 'AR' ? '📁 تصفح ملف صنف حقيقي (.sqlite)' : '📁 Choose real SQLite file'}
+                              </button>
+
+                              {/* Option B: Fast trial simulation */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const mockFiles = [
+                                    'Dhibani_Mohaseb_Retail_Backup_2026.sqlite',
+                                    'Alameen_Warehouse_Snapshot.db',
+                                    'YemenSoft_InvoiceExporter.zip',
+                                    'DhibaniGrocery_Retail_Jard.sqlite'
+                                  ];
+                                  const randomFile = mockFiles[Math.floor(Math.random() * mockFiles.length)];
+                                  setWizardBackupFileName(randomFile);
+                                  setSelectedBackupFile(null);
+                                  localStorage.setItem('import_wizard_backup_filename', randomFile);
+                                }}
+                                className="bg-slate-850 hover:bg-slate-800 border border-slate-750 text-slate-300 text-[11px] font-black px-4.5 py-2.5 rounded-xl transition-all cursor-pointer"
+                              >
+                                {language === 'AR' ? '✨ تجربة محاكاة تلقائية سريعة' : '✨ Run instant simulated match'}
+                              </button>
+                            </div>
+
+                            <p className="text-[9.5px] text-slate-500 max-w-sm mx-auto">
+                              {language === 'AR' ? '💡 يدعم الرفع الملفات الحقيقية ذات الأحجام الكبيرة وتخزينها بأمان على Supabase Storage.' : '💡 Securely supports multi-megabyte database uploads mapped stream-wise.'}
                             </p>
                           </div>
                         )}

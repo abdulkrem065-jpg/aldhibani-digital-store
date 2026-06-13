@@ -30,7 +30,10 @@ export default function Gateway({ onBypass, onLoginSuccess, storeNameAR, storeNa
   const [errorMsg, setErrorMsg] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
-  const [authMode, setAuthMode] = useState<'GUEST' | 'STAFF'>('GUEST');
+  const [authMode, setAuthMode] = useState<'GUEST' | 'STAFF'>(() => {
+    const path = window.location.pathname.toLowerCase();
+    return (path === '/admin' || path === '/merchant') ? 'STAFF' : 'GUEST';
+  });
 
   // Handle traditional Login (Username and password '123' or direct token) via Serverless Cloud Database
   const handleLoginSubmit = async (e: React.FormEvent) => {

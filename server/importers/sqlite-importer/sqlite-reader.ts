@@ -126,6 +126,29 @@ export class SqliteReader {
   }
 
   /**
+   * Run custom arbitrary SQL query and return rows
+   */
+  public execQuery(query: string): any[] {
+    if (!this.db) throw new Error('Database not loaded');
+    try {
+      const res = this.db.exec(query);
+      if (!res || res.length === 0) return [];
+
+      const columns = res[0].columns;
+      return res[0].values.map((row: any[]) => {
+        const obj: Record<string, any> = {};
+        columns.forEach((col: string, idx: number) => {
+          obj[col] = row[idx];
+        });
+        return obj;
+      });
+    } catch (e: any) {
+      console.error(`Error executing custom query "${query}":`, e.message);
+      return [];
+    }
+  }
+
+  /**
    * Closes db handles to free up memory.
    */
   public close() {

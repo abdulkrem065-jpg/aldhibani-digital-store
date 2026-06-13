@@ -32,6 +32,12 @@ import { AssistantPage } from './modules/assistant/pages/AssistantPage';
 export default function App() {
   // Session Router States
   const [view, setView] = useState<'GATEWAY' | 'STORE'>(() => {
+    const path = window.location.pathname.toLowerCase();
+    if (path === '/admin' || path === '/merchant') {
+      localStorage.setItem('aldhibani_pref_admin_path', path);
+      const savedUser = localStorage.getItem('aldhibani_user');
+      return savedUser ? 'STORE' : 'GATEWAY';
+    }
     return (localStorage.getItem('aldhibani_view') as any) || 'GATEWAY';
   });
   const [showAssistantPage, setShowAssistantPage] = useState<boolean>(false);
@@ -47,8 +53,40 @@ export default function App() {
     return localStorage.getItem('aldhibani_token') || null;
   });
   const [isAdminView, setIsAdminView] = useState(() => {
+    const path = window.location.pathname.toLowerCase();
+    if (path === '/admin' || path === '/merchant') {
+      localStorage.setItem('aldhibani_pref_admin_path', path);
+      return true;
+    }
     return localStorage.getItem('aldhibani_is_admin') === 'true';
   });
+
+  // Listen to browser forward/backward URL buttons to update view states
+  useEffect(() => {
+    const handleUrlRoute = () => {
+      const path = window.location.pathname.toLowerCase();
+      if (path === '/admin' || path === '/merchant') {
+        localStorage.setItem('aldhibani_pref_admin_path', path);
+        const savedUser = localStorage.getItem('aldhibani_user');
+        if (savedUser) {
+          setView('STORE');
+          setIsAdminView(true);
+        } else {
+          setView('GATEWAY');
+          setIsAdminView(false);
+        }
+      } else if (path === '/' || path === '') {
+        setView((prev) => {
+          const saved = localStorage.getItem('aldhibani_view') as any;
+          return saved || 'GATEWAY';
+        });
+        setIsAdminView(false);
+      }
+    };
+
+    window.addEventListener('popstate', handleUrlRoute);
+    return () => window.removeEventListener('popstate', handleUrlRoute);
+  }, []);
 
   // Global Context preferences
   const [language, setLanguage] = useState<Language>('AR');
@@ -334,6 +372,15 @@ export default function App() {
     localStorage.setItem('aldhibani_token', token);
     localStorage.setItem('aldhibani_view', 'STORE');
     localStorage.setItem('aldhibani_is_admin', 'true');
+
+    // Dynamic browser routing update
+    const path = window.location.pathname.toLowerCase();
+    if (path !== '/admin' && path !== '/merchant') {
+      const prefPath = localStorage.getItem('aldhibani_pref_admin_path') || '/admin';
+      window.history.pushState({}, '', prefPath);
+    } else {
+      localStorage.setItem('aldhibani_pref_admin_path', path);
+    }
   };
 
   // Visitor shopping bypass
@@ -352,6 +399,9 @@ export default function App() {
     localStorage.removeItem('aldhibani_token');
     localStorage.setItem('aldhibani_view', 'STORE');
     localStorage.setItem('aldhibani_is_admin', 'false');
+
+    // Reset path back to shopper home
+    window.history.pushState({}, '', '/');
   };
 
   const handleLogout = () => {
@@ -364,6 +414,9 @@ export default function App() {
     localStorage.removeItem('aldhibani_token');
     localStorage.setItem('aldhibani_view', 'GATEWAY');
     localStorage.setItem('aldhibani_is_admin', 'false');
+
+    // Reset path back to shopper home
+    window.history.pushState({}, '', '/');
   };
 
   // Adding product to basket logic (handling direct cell / id entries)
@@ -468,9 +521,20 @@ export default function App() {
             user={currentUser}
             onLogout={handleLogout}
             onToggleAdminView={() => {
-              setIsAdminView(!isAdminView);
+              const nextVal = !isAdminView;
+              setIsAdminView(nextVal);
               if (showAssistantPage) {
                 setShowAssistantPage(false);
+              }
+              if (nextVal) {
+                const prefPath = localStorage.getItem('aldhibani_pref_admin_path') || '/admin';
+                window.history.pushState({}, '', prefPath);
+              } else {
+                const path = window.location.pathname.toLowerCase();
+                if (path === '/admin' || path === '/merchant') {
+                  localStorage.setItem('aldhibani_pref_admin_path', path);
+                }
+                window.history.pushState({}, '', '/');
               }
             }}
             isAdminView={isAdminView}
@@ -852,7 +916,7 @@ export default function App() {
                       </div>
                       <div>
                         <h3 className="text-sm font-black tracking-wide leading-none">{language === 'AR' ? 'محرك الذكاء الاصطناعي' : 'Super-Agent Chat'}</h3>
-                        <span className="text-[10px] text-cyan-300 font-mono">gemini-3.5-flash @ YER</span>
+                        <span className="text-[10px] text-cyan-300 font-mono">gemini-1.5-flash</span>
                       </div>
                     </div>
                     <button

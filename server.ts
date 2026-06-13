@@ -5,6 +5,7 @@ import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
+import fs from 'fs';
 import { Product, StoreConfig, Order, DebtRecord, StaffUser, CustomCategory, Banner } from './src/types';
 import { ImportService } from './server/importers/sqlite-importer/import-service';
 import { createAssistantRouter } from './server/modules/assistant/assistant.routes';
@@ -1218,13 +1219,24 @@ app.post('/api/staff/change-password', async (req, res) => {
 
     // Update staff_users directly in Supabase
     if (supabase) {
-      const { error: updateErr } = await supabase
+      const updateQuery = supabase
         .from('staff_users')
         .update({
           password_hash: newHash,
           password: null
         })
         .eq('id', staff.id);
+
+      // Secure Tenant/Organization filter injection
+      const orgColumn = 'org_id' in staff ? 'org_id' : ('organization_id' in staff ? 'organization_id' : null);
+      if (orgColumn) {
+        const orgVal = staff[orgColumn];
+        if (orgVal) {
+          updateQuery.eq(orgColumn, orgVal);
+        }
+      }
+
+      const { error: updateErr } = await updateQuery;
 
       if (updateErr) {
         console.error('[Supabase Update Password Error]', updateErr);
@@ -1241,21 +1253,18 @@ app.post('/api/staff/change-password', async (req, res) => {
         return res.status(500).json({ error: `فشل تحديث البيانات في Supabase: ${updateErr.message}` });
       }
 
-      // Sync to store_config in Supabase
+      // Secure Config handling (Prevent plaintext passwords storage)
       try {
         const { data: configData } = await supabase.from('store_config').select('*').limit(1).maybeSingle();
-        let updatedConfig: any = configData || { id: 'single-row' };
-        if (staff.role === 'ADMIN') {
-          updatedConfig.adminPassword = newPassword;
-        } else if (staff.role === 'CASHIER') {
-          updatedConfig.cashierPassword = newPassword;
-        } else if (staff.role === 'COMMUNICATIONS' || staff.role === 'STORE_MANAGER') {
-          updatedConfig.telecomPassword = newPassword;
+        if (configData) {
+          let updatedConfig: any = configData;
+          if ('adminPassword' in updatedConfig) delete updatedConfig.adminPassword;
+          if ('cashierPassword' in updatedConfig) delete updatedConfig.cashierPassword;
+          if ('telecomPassword' in updatedConfig) delete updatedConfig.telecomPassword;
+          
+          await supabase.from('store_config').upsert(updatedConfig);
+          storeDatabase.config = { ...storeDatabase.config, ...updatedConfig };
         }
-        await supabase.from('store_config').upsert(updatedConfig);
-        
-        // Also sync local storeDatabase in-memory config for immediate UI visual alignment without hard reload
-        storeDatabase.config = { ...storeDatabase.config, ...updatedConfig };
       } catch (e) {
         console.error('[Supabase Post Config Sync Error during Password Change]', e);
       }
@@ -1264,13 +1273,9 @@ app.post('/api/staff/change-password', async (req, res) => {
       const localIdx = storeDatabase.staffUsers.findIndex(s => s.id === staffId);
       if (localIdx !== -1) {
         storeDatabase.staffUsers[localIdx].password_hash = newHash;
-      }
-      if (staff.role === 'ADMIN') {
-        storeDatabase.config.adminPassword = newPassword;
-      } else if (staff.role === 'CASHIER') {
-        storeDatabase.config.cashierPassword = newPassword;
-      } else if (staff.role === 'COMMUNICATIONS' || staff.role === 'STORE_MANAGER') {
-        storeDatabase.config.telecomPassword = newPassword;
+        if (storeDatabase.staffUsers[localIdx].password) {
+          delete storeDatabase.staffUsers[localIdx].password;
+        }
       }
     }
 
@@ -1323,7 +1328,8 @@ app.post('/api/staff/reset-password', async (req, res) => {
 
         if (!error && data && data.length > 0) {
           staff = data[0];
-          const { error: updateErr } = await supabase
+          
+          const updateQuery = supabase
             .from('staff_users')
             .update({
               password_hash: newHash,
@@ -1331,6 +1337,16 @@ app.post('/api/staff/reset-password', async (req, res) => {
             })
             .eq('id', staffId);
 
+          // Secure Tenant/Organization filter injection
+          const orgColumn = 'org_id' in staff ? 'org_id' : ('organization_id' in staff ? 'organization_id' : null);
+          if (orgColumn) {
+            const orgVal = staff[orgColumn];
+            if (orgVal) {
+              updateQuery.eq(orgColumn, orgVal);
+            }
+          }
+
+          const { error: updateErr } = await updateQuery;
           if (!updateErr) {
             isCloudUser = true;
           }
@@ -1345,27 +1361,13 @@ app.post('/api/staff/reset-password', async (req, res) => {
     if (localIdx !== -1) {
       if (!staff) staff = storeDatabase.staffUsers[localIdx];
       storeDatabase.staffUsers[localIdx].password_hash = newHash;
+      if (storeDatabase.staffUsers[localIdx].password) {
+        delete storeDatabase.staffUsers[localIdx].password;
+      }
     }
 
     if (!staff) {
       return res.status(404).json({ error: 'الموظف غير موجود!' });
-    }
-
-    // Sync back to config as well
-    if (staff.role === 'ADMIN') {
-      storeDatabase.config.adminPassword = newPassword;
-    } else if (staff.role === 'CASHIER') {
-      storeDatabase.config.cashierPassword = newPassword;
-    } else if (staff.role === 'COMMUNICATIONS' || staff.role === 'STORE_MANAGER') {
-      storeDatabase.config.telecomPassword = newPassword;
-    }
-
-    if (supabase) {
-      try {
-        await supabase.from('store_config').upsert({ id: 'single-row', ...storeDatabase.config });
-      } catch (e) {
-        console.error('[Supabase Post Config Sync Error during Password Reset]', e);
-      }
     }
 
     // Record inside audit_log
@@ -1412,7 +1414,7 @@ app.post('/api/gemini/translate', async (req, res) => {
     const aiInstance = getGeminiClient();
     if (aiInstance) {
       const response = await aiInstance.models.generateContent({
-        model: 'gemini-3.5-flash',
+        model: 'gemini-1.5-flash',
         contents: `Translate this single Arabic product/item name to a short, professionally structured English name (title casing). Only output the English translation itself. Do not add explanations, do not add quotes, do not add markdown, do not write other words. Text: "${text}"`
       });
       const translated = response.text?.trim() || '';
@@ -1463,9 +1465,9 @@ app.post('/api/gemini/suggest-image', async (req, res) => {
     
     if (aiInstance) {
       try {
-        // Fetch keyword and prompt from Gemini 3.5-flash
+        // Fetch keyword and prompt from Gemini 1.5-flash
         const analyzeResponse = await aiInstance.models.generateContent({
-          model: 'gemini-3.5-flash',
+          model: 'gemini-1.5-flash',
           contents: `You are an AI product photographer. Analyze this item:
 Name (Arabic): ${nameAR || ''}
 Name (English): ${nameEN || ''}
@@ -1651,9 +1653,9 @@ ${catalogString}
 [ACTION: {"type": "ADD_TO_CART", "productId": "MATCHED_PRODUCT_ID"}] 
 تأكد من كتابة اسم المنتج ومعرفه الصحيح من كتالوج الأمان.`;
 
-    // Talk to gemini-3.5-flash with proper SDK calling form
+    // Talk to gemini-1.5-flash with proper SDK calling form
     const response = await aiInstance.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-1.5-flash',
       contents: prompt,
       config: {
         systemInstruction: systemPromptMessage,
@@ -1695,6 +1697,87 @@ ${catalogString}
 // ----------------------------------------------------
 // 🏠 SMART DATA IMPORT ENGINE (MIGRATION CENTRAL APIs)
 // ----------------------------------------------------
+
+// 0. POST /api/import/sqlite - Receives storage URL and stream-processes the SQLite database file
+app.post('/api/import/sqlite', async (req, res) => {
+  try {
+    const { fileUrl, orgId, branchId, operator } = req.body;
+    if (!fileUrl) {
+      return res.status(400).json({ error: 'يرجى تقديم رابط ملف قاعدة البيانات (fileUrl)!' });
+    }
+
+    const currentOrg = orgId || 'org_vip_dhibani';
+    const currentBranch = branchId || 'branch_01';
+    const currentOperator = operator || 'ADMIN';
+
+    console.log(`[Import API] Initiating secure streaming parsing from: ${fileUrl}`);
+
+    // Fetch as stream (NOT full arrayBuffer in memory)
+    const response = await fetch(fileUrl);
+    if (!response.ok || !response.body) {
+      throw new Error(`تعذر تحميل الملف من الرابط المرفق: ${response.statusText}`);
+    }
+
+    // Pipe stream directly to file to support up to 100MB safely
+    const tempDbPath = path.join(process.cwd(), 'backup_import_temp.sqlite');
+    const fileStream = fs.createWriteStream(tempDbPath);
+    
+    await new Promise<void>((resolve, reject) => {
+      const { Readable } = require('stream');
+      const nodeStream = Readable.fromWeb(response.body as any);
+      
+      nodeStream.pipe(fileStream);
+      nodeStream.on('error', (err: any) => reject(err));
+      fileStream.on('finish', () => resolve());
+      fileStream.on('error', (err: any) => reject(err));
+    });
+
+    // Verify written file size limits (up to 100MB)
+    const stats = fs.statSync(tempDbPath);
+    console.log(`[Import API] Stream piping completed. Saved file size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+
+    // Verify SQLite magic header first
+    const fd = fs.openSync(tempDbPath, 'r');
+    const headerBuffer = Buffer.alloc(16);
+    fs.readSync(fd, headerBuffer, 0, 16, 0);
+    fs.closeSync(fd);
+    
+    if (headerBuffer.toString('utf-8', 0, 15) !== 'SQLite format 3') {
+      throw new Error('الملف المرفوع ليس ملف قاعدة بيانات SQLite صالح.');
+    }
+
+    // Kick off chunked ETL background task
+    const service = ImportService.getInstance();
+    const jobId = await service.startImport(
+      currentOrg,
+      currentBranch,
+      currentOperator,
+      supabase,
+      storeDatabase
+    );
+
+    await insertAuditLog('DATA_MIGRATION_SQLITE_STREAM', currentOperator, {
+      jobId,
+      orgId: currentOrg,
+      branchId: currentBranch,
+      fileSize: stats.size
+    });
+
+    return res.json({
+      success: true,
+      jobId,
+      fileStats: {
+        fileSize: stats.size,
+        success: true
+      },
+      message: 'بدأت عملية معالجة واستيراد ملف SQLite السحابي بنجاح 🟢.'
+    });
+
+  } catch (err: any) {
+    console.error('[Import API] Streaming ingestion failed:', err.message);
+    return res.status(500).json({ error: err.message || 'فشل معالجة وبث ملف قاعدة البيانات.' });
+  }
+});
 
 // 1. POST /api/import/upload - Receives SQLite backup file
 app.post('/api/import/upload', async (req, res) => {
@@ -1774,7 +1857,7 @@ app.post('/api/import/start', async (req, res) => {
 
     const service = ImportService.getInstance();
     
-    const jobId = service.startImport(
+    const jobId = await service.startImport(
       currentOrg,
       currentBranch,
       currentOperator,
@@ -1827,7 +1910,7 @@ app.post('/api/import/start-from-storage', async (req, res) => {
     const uploadResult = await service.saveUpload(buffer);
 
     // Now start the background ETL job
-    const jobId = service.startImport(
+    const jobId = await service.startImport(
       currentOrg,
       currentBranch,
       currentOperator,
@@ -1864,7 +1947,7 @@ app.post('/api/import/rollback', async (req, res) => {
     }
 
     const service = ImportService.getInstance();
-    const result = await service.rollbackJob(jobId, supabase, storeDatabase);
+    const result = await service.rollbackJob(jobId, supabase, storeDatabase, operator || 'ADMIN');
 
     await insertAuditLog('DATA_MIGRATION_ROLLBACK_JOB', operator || 'ADMIN', {
       jobId,
@@ -1879,11 +1962,11 @@ app.post('/api/import/rollback', async (req, res) => {
 });
 
 // 5. GET /api/import/status/:jobId - Track async progress
-app.get('/api/import/status/:jobId', (req, res) => {
+app.get('/api/import/status/:jobId', async (req, res) => {
   try {
     const { jobId } = req.params;
     const service = ImportService.getInstance();
-    const job = service.getJob(jobId);
+    const job = await service.getJob(jobId);
 
     if (!job) {
       return res.status(404).json({ error: 'لم يتم العثور على أي مهمة هجرة بالمعرف المرفق.' });
@@ -1896,11 +1979,11 @@ app.get('/api/import/status/:jobId', (req, res) => {
 });
 
 // 6. GET /api/import/report/:jobId - Fetch final report logs
-app.get('/api/import/report/:jobId', (req, res) => {
+app.get('/api/import/report/:jobId', async (req, res) => {
   try {
     const { jobId } = req.params;
     const service = ImportService.getInstance();
-    const job = service.getJob(jobId);
+    const job = await service.getJob(jobId);
 
     if (!job) {
       return res.status(404).json({ error: 'لم يتم العثور على التقرير المطلوب بالمعرف الموصوف.' });

@@ -383,47 +383,56 @@ export default function Header({
               }`}
             >
               <span>🏠</span>
-              <span>{t('nav.showroom', language)}</span>
+              <span>
+                {isAdminView 
+                  ? (language === 'AR' ? 'العودة للمعرض 🛒' : 'Back to Store 🛒')
+                  : t('nav.showroom', language)
+                }
+              </span>
             </button>
 
-            {/* 2. المساعد الذكي AI */}
-            <button
-              type="button"
-              onClick={onToggleAssistantPage}
-              className={`px-2 py-1 rounded-lg text-[10px] md:text-[11px] font-black flex items-center gap-1 transition-all border cursor-pointer ${
-                showAssistantPage
-                  ? 'bg-[#facc15] text-slate-950 border-amber-400 font-extrabold shadow-sm'
-                  : 'bg-slate-950/60 text-slate-300 border-slate-800 hover:border-amber-400'
-              }`}
-            >
-              <span>🤖</span>
-              <span>{t('nav.bot', language)}</span>
-            </button>
+            {!isAdminView && (
+              <>
+                {/* 2. المساعد الذكي AI */}
+                <button
+                  type="button"
+                  onClick={onToggleAssistantPage}
+                  className={`px-2 py-1 rounded-lg text-[10px] md:text-[11px] font-black flex items-center gap-1 transition-all border cursor-pointer ${
+                    showAssistantPage
+                      ? 'bg-[#facc15] text-slate-950 border-amber-400 font-extrabold shadow-sm'
+                      : 'bg-slate-950/60 text-slate-300 border-slate-800 hover:border-amber-400'
+                  }`}
+                >
+                  <span>🤖</span>
+                  <span>{t('nav.bot', language)}</span>
+                </button>
 
-            {/* 3. تتبع الطلبات */}
-            <button
-              type="button"
-              onClick={() => setShowTrackerModal(true)}
-              className="px-2 py-1 rounded-lg text-[10px] md:text-[11px] font-black bg-slate-950/60 hover:bg-slate-900 text-slate-100 border border-slate-800 hover:border-amber-400 cursor-pointer flex items-center gap-1 transition-all"
-            >
-              <span>📋</span>
-              <span>{t('nav.track', language)}</span>
-            </button>
+                {/* 3. تتبع الطلبات */}
+                <button
+                  type="button"
+                  onClick={() => setShowTrackerModal(true)}
+                  className="px-2 py-1 rounded-lg text-[10px] md:text-[11px] font-black bg-slate-950/60 hover:bg-slate-900 text-slate-100 border border-slate-800 hover:border-amber-400 cursor-pointer flex items-center gap-1 transition-all"
+                >
+                  <span>📋</span>
+                  <span>{t('nav.track', language)}</span>
+                </button>
 
-            {/* 4. السلة */}
-            <button
-              onClick={onOpenCart}
-              className="px-2 py-1 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-900 text-white transition-all flex items-center gap-1 cursor-pointer text-[10px] md:text-[11px] font-bold"
-              id="cart-trigger-nav"
-            >
-              <ShoppingCart className="w-3.5 h-3.5 text-amber-500" />
-              <span>{t('nav.cart', language)}</span>
-              {cartCount > 0 && (
-                <span className="px-1 rounded bg-red-600 text-white font-bold leading-none text-[9px] min-w-4 text-center">
-                  {cartCount}
-                </span>
-              )}
-            </button>
+                {/* 4. السلة */}
+                <button
+                  onClick={onOpenCart}
+                  className="px-2 py-1 rounded-lg border border-slate-800 bg-slate-950 hover:bg-slate-900 text-white transition-all flex items-center gap-1 cursor-pointer text-[10px] md:text-[11px] font-bold"
+                  id="cart-trigger-nav"
+                >
+                   <ShoppingCart className="w-3.5 h-3.5 text-amber-500" />
+                  <span>{t('nav.cart', language)}</span>
+                  {cartCount > 0 && (
+                    <span className="px-1 rounded bg-red-600 text-white font-bold leading-none text-[9px] min-w-4 text-center">
+                      {cartCount}
+                    </span>
+                  )}
+                </button>
+              </>
+            )}
 
           </div>
 

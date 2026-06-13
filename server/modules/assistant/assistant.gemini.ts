@@ -50,7 +50,7 @@ export class AssistantGeminiBridge {
 
       // Create a chat instance
       const chat = client.chats.create({
-        model: 'gemini-3.5-flash',
+        model: 'gemini-1.5-flash',
         config: {
           systemInstruction: systemInstruction,
           temperature: 0.7,
