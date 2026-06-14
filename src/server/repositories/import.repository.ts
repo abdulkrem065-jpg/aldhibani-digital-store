@@ -7,6 +7,8 @@ export interface DBImportJob {
   status: 'pending' | 'processing' | 'success' | 'failed' | 'rolled_back';
   progress: number;
   current_chunk: number;
+  current_offset?: number | null;
+  current_stage?: string | null;
   info: string | null;
   created_by: string;
   created_at?: string;

@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import crypto from 'crypto';
 import { SqliteReader } from '../../../server/importers/sqlite-importer/sqlite-reader';
 import { UUIDGenerator } from '../../../server/importers/sqlite-importer/uuid-generator';
@@ -12,13 +10,12 @@ import { ImportRepository, DBImportJob } from '../repositories/import.repository
 
 export class ImportService {
   private static instance: ImportService | null = null;
-  private tempDbPath = path.join(process.cwd(), 'backup_import_temp.sqlite');
+  private activeBuffer: Buffer | null = null;
   private isProcessingQueue = false;
   private CHUNK_SIZE = 100;
 
   private constructor() {
-    // Initiate background resume polling for uninterrupted recoverability
-    this.initResumeManager();
+    // Memory-only chunk-based ETL processor with no background interval threads
   }
 
   public static getInstance(): ImportService {
@@ -29,10 +26,10 @@ export class ImportService {
   }
 
   /**
-   * Safe save upload file buffer.
+   * Safe save upload file buffer in memory cache.
    */
   public async saveUpload(buffer: Buffer): Promise<any> {
-    fs.writeFileSync(this.tempDbPath, buffer);
+    this.activeBuffer = buffer;
     const reader = new SqliteReader(buffer);
     await reader.load();
     
@@ -47,24 +44,36 @@ export class ImportService {
 
     UUIDGenerator.reset();
 
-    const stats = fs.statSync(this.tempDbPath);
     return {
       success: true,
-      fileSize: stats.size,
+      fileSize: buffer.length,
       tablesCount: metadata.length,
       tables: metadata.map(t => ({ name: t.name, rows: t.rowCount }))
     };
   }
 
   /**
-   * Preflight scanner.
+   * Preflight scanner. Accept fileUrl option to bypass filesystem.
    */
-  public async analyzeBackup(): Promise<any> {
-    if (!fs.existsSync(this.tempDbPath)) {
+  public async analyzeBackup(fileUrl?: string): Promise<any> {
+    let buffer = this.activeBuffer;
+    if (fileUrl) {
+      try {
+        const response = await fetch(fileUrl);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          buffer = Buffer.from(arrayBuffer);
+          this.activeBuffer = buffer;
+        }
+      } catch (fetchErr: any) {
+        console.warn('Failed preflight URL stream:', fetchErr.message);
+      }
+    }
+
+    if (!buffer) {
       throw new Error('لم يتم العثور على ملف مرفوع للتحليل. من فضلك ارفع النسخة الاحتياطية أولاً.');
     }
 
-    const buffer = fs.readFileSync(this.tempDbPath);
     const reader = new SqliteReader(buffer);
     await reader.load();
 
@@ -109,14 +118,27 @@ export class ImportService {
   }
 
   /**
-   * Real record preview.
+   * Real record preview. Accept fileUrl option to bypass filesystem.
    */
-  public async previewRecords(limit: number = 5): Promise<any> {
-    if (!fs.existsSync(this.tempDbPath)) {
+  public async previewRecords(limit: number = 5, fileUrl?: string): Promise<any> {
+    let buffer = this.activeBuffer;
+    if (fileUrl) {
+      try {
+        const response = await fetch(fileUrl);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          buffer = Buffer.from(arrayBuffer);
+          this.activeBuffer = buffer;
+        }
+      } catch (fetchErr: any) {
+        console.warn('Failed preview URL stream:', fetchErr.message);
+      }
+    }
+
+    if (!buffer) {
       throw new Error('لا يوجد ملف نشط لعرض معاينته.');
     }
 
-    const buffer = fs.readFileSync(this.tempDbPath);
     const reader = new SqliteReader(buffer);
     await reader.load();
 
@@ -145,9 +167,10 @@ export class ImportService {
 
   /**
    * Start cloud-native multi-tenant import.
-   * STRICT: Requires organization_id, branch_id and created_by.
+   * STRICT: Requires fileUrl, organization_id, branch_id and created_by.
    */
   public async startImport(
+    fileUrl: string,
     orgId: string,
     branchId: string,
     userId: string,
@@ -165,8 +188,8 @@ export class ImportService {
       throw new Error('يُمنع البدء بالاستيراد بدون الكاتب أو المشغل (created_by) لتوثيق المسؤولية.');
     }
 
-    if (!fs.existsSync(this.tempDbPath)) {
-      throw new Error('لا يوجد ملف نشط للبدء بعملية النقل.');
+    if (!fileUrl) {
+      throw new Error('رابط ملف قاعدة البيانات (fileUrl) مطلوب لبدء عملية النقل.');
     }
 
     const jobId = crypto.randomUUID();
@@ -179,8 +202,17 @@ export class ImportService {
       status: 'pending',
       progress: 0,
       current_chunk: 0,
+      current_offset: 0,
+      current_stage: 'categories',
       info: 'تمت جدولة المهمة سحابياً داخل قاعدة بيانات Supabase...',
       created_by: userId,
+      summary: {
+        fileUrl,
+        categories: 0,
+        products: 0,
+        customers: 0,
+        orders: 0
+      },
       inserted_ids: {
         categories: [],
         products: [],
@@ -196,44 +228,7 @@ export class ImportService {
       message: `تم إنشاء مهمة الاستيراد تحت مُعرّف ${jobId} بنجاح.`
     });
 
-    // Start database-driven asynchronous worker loop
-    this.triggerWorkerQueue(supabaseClient, storeDatabase);
-
     return created.id;
-  }
-
-  /**
-   * Automatic background polling for interrupted jobs.
-   */
-  private initResumeManager() {
-    setInterval(() => {
-      this.triggerWorkerQueue(null, null);
-    }, 15000); // Poll every 15 seconds to ensure self-healing resiliency
-  }
-
-  /**
-   * Triggers the DB-driven Queue worker.
-   */
-  public async triggerWorkerQueue(supabaseClient: any, storeDatabase: any) {
-    if (this.isProcessingQueue) return;
-    this.isProcessingQueue = true;
-
-    try {
-      const unfinished = await ImportRepository.getUnfinishedJobs();
-      for (const job of unfinished) {
-        console.log(`[ImportService] Resuming/Starting Database Job: ${job.id} (Status: ${job.status})`);
-        
-        try {
-          await this.runImportPipeline(job.id, supabaseClient, storeDatabase);
-        } catch (pipelineError: any) {
-          console.error(`[ImportService] Interrupted pipeline for job ${job.id}:`, pipelineError.message);
-        }
-      }
-    } catch (err: any) {
-      console.error('[ImportService] Queue polling failed:', err.message);
-    } finally {
-      this.isProcessingQueue = false;
-    }
   }
 
   /**
@@ -360,322 +355,409 @@ export class ImportService {
   }
 
   /**
-   * Safe execution pipeline block. Supports chunking, dynamic events, and resume.
+   * Process exactly ONE chunk of current stage in the active job.
+   * This is called by GET /api/import/status/:jobId or POST /api/import/sqlite/continue
+   * to ensure serverless compliance with ZERO background lingering threads.
    */
-  private async runImportPipeline(jobId: string, supabaseClient: any, storeDatabase: any) {
+  public async processNextChunk(
+    jobId: string,
+    supabaseClient: any,
+    storeDatabase: any
+  ): Promise<any> {
     const job = await ImportRepository.getJob(jobId);
-    if (!job) return;
+    if (!job) {
+      throw new Error('لم يتم العثور على مهمة استيراد تابعة لهذا المعرّف.');
+    }
 
+    // Check if job finished already
+    if (job.status === 'success' || job.status === 'failed' || job.status === 'rolled_back') {
+      return this.formattedJob(job);
+    }
+
+    // Parse the summary metadata state
+    let summary: any = job.summary;
+    if (typeof summary === 'string') {
+      summary = JSON.parse(summary);
+    }
+    if (!summary) {
+      summary = {};
+    }
+
+    const fileUrl = summary.fileUrl || job.summary?.fileUrl;
+    if (!fileUrl) {
+      throw new Error('رابط ملف قاعدة البيانات (fileUrl) مفقود من تقرير المهمة.');
+    }
+
+    // Optimistic Concurrency check
+    const now = Date.now();
+    const lastUpdate = job.updated_at ? new Date(job.updated_at).getTime() : 0;
+    if (job.status === 'processing' && now - lastUpdate < 3000) {
+      // Return immediately if polled too fast and already processing
+      return this.formattedJob(job);
+    }
+
+    // Mark job as processing
+    await ImportRepository.updateJob(jobId, {
+      status: 'processing',
+      current_offset: (job.current_offset !== undefined && job.current_offset !== null) ? Number(job.current_offset) : (summary.offset || 0),
+      current_stage: job.current_stage || summary.stage || 'categories',
+      info: 'جاري تشغيل المعالجة التدفقية المتتابعة للبيانات...'
+    });
+
+    let reader: SqliteReader | null = null;
     try {
-      await ImportRepository.updateJob(jobId, {
-        status: 'processing',
-        progress: 5,
-        info: 'جاري شحن وفحص معرّفات قواعد البيانات الاحتياطية سحابياً...'
-      });
-
-      await ImportRepository.logEvent({
-        job_id: jobId,
-        event_type: 'pipeline_started',
-        message: 'بدأ معالج الحزم بفحص البيئة السحابية وملف SQLite.'
-      });
-
-      // Assert local SQLite file.
-      if (!fs.existsSync(this.tempDbPath)) {
-        throw new Error('الملف المؤقت لمهمة الاستيراد مفقود على هذا الخادم. يتعين إعادة رفع الملف.');
+      // 1. Fetch the file to an in-memory buffer
+      let buffer: Buffer;
+      if (fileUrl === 'in-memory-cached' && this.activeBuffer) {
+        buffer = this.activeBuffer;
+      } else {
+        const response = await fetch(fileUrl);
+        if (!response.ok) {
+          throw new Error(`تعذر تحميل الملف من الرابط المرفق: ${response.statusText}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        buffer = Buffer.from(arrayBuffer);
+        // cache it for active session
+        this.activeBuffer = buffer;
       }
 
-      const buffer = fs.readFileSync(this.tempDbPath);
-      const reader = new SqliteReader(buffer);
+      // Verify SQLite magic header first
+      if (buffer.length < 16 || buffer.toString('utf-8', 0, 15) !== 'SQLite format 3') {
+        throw new Error('الملف المرفوع ليس ملف قاعدة بيانات SQLite صالح أو تالف.');
+      }
+
+      // Initialize the in-memory reader
+      reader = new SqliteReader(buffer);
       await reader.load();
 
       const orgId = job.organization_id;
       const branchId = job.branch_id;
       const userId = job.created_by;
 
-      const insertedIds = {
-        categories: [] as string[],
-        products: [] as string[],
-        customers: [] as string[],
-        orders: [] as string[]
-      };
+      // Ensure totalCounts are pre-calculated
+      if (!summary.totalCounts) {
+        const metadata = await reader.getTablesMetadata();
+        summary.totalCounts = {
+          categories: metadata.find((t: any) => t.name === 'item_type')?.rowCount || 0,
+          products: metadata.find((t: any) => t.name === 'items')?.rowCount || 0,
+          customers: metadata.find((t: any) => t.name === 'customers')?.rowCount || 0,
+          orders: metadata.find((t: any) => t.name === 'bills')?.rowCount || 0
+        };
+        summary.stage = 'categories';
+        summary.offset = 0;
+        summary.categoryNameMap = {};
+        summary.counts = {
+          categories: 0,
+          products: 0,
+          customers: 0,
+          orders: 0
+        };
+      }
 
+      // Parse inserted ids accumulator from the database
+      let insertedIds: any = job.inserted_ids;
+      if (typeof insertedIds === 'string') {
+        insertedIds = JSON.parse(insertedIds);
+      }
+      if (!insertedIds || !insertedIds.categories) {
+        insertedIds = {
+          categories: [],
+          products: [],
+          customers: [],
+          orders: []
+        };
+      }
+
+      const stage = job.current_stage || summary.stage || 'categories';
+      let offset = (job.current_offset !== undefined && job.current_offset !== null) ? Number(job.current_offset) : (summary.offset || 0);
       const CHUNK_SIZE = 50;
-      const batchResults: any[] = [];
 
-      // ---- STAGE 1: Categories ----
-      await ImportRepository.updateJob(jobId, { progress: 15, info: 'جاري استيراد الحزم رقم 1: فئات السلع والمجموعات الدورية...' });
-      await ImportRepository.logEvent({ job_id: jobId, event_type: 'chunk_start', message: 'تشغيل حزمة إدخال الفئات...' });
+      console.log(`[ImportService-Serverless] Processing Job ${jobId}: Stage ${stage}, Offset ${offset}`);
 
-      let catOffset = 0;
-      let catChunkNum = 0;
-      const categoryNameMap: Record<number, string> = {};
+      if (stage === 'categories') {
+        const total = summary.totalCounts.categories;
+        const rawCategories = reader.getTableRows('item_type', CHUNK_SIZE, offset);
 
-      while (true) {
-        const rawCategories = reader.getTableRows('item_type', CHUNK_SIZE, catOffset);
-        if (rawCategories.length === 0) break;
+        if (rawCategories.length > 0) {
+          // Keep mapping for products stage
+          rawCategories.forEach((c: any) => {
+            summary.categoryNameMap[c.id] = c.name;
+          });
 
-        rawCategories.forEach(c => {
-          categoryNameMap[c.id] = c.name;
-        });
+          const transformed = rawCategories.map((c: any) => {
+            const tr = DataTransformer.transformCategory(c);
+            return OrganizationInjector.inject(tr, orgId, branchId, userId);
+          });
 
-        const transformedCategories = rawCategories.map(c => {
-          const tr = DataTransformer.transformCategory(c);
-          return OrganizationInjector.inject(tr, orgId, branchId, userId);
-        });
-
-        await ImportRepository.createChunk({
-          job_id: jobId,
-          chunk_number: catChunkNum,
-          status: 'processing',
-          record_count: transformedCategories.length
-        });
-
-        let success = false;
-        let lastError = '';
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          try {
-            const batchRes = await BatchImporter.importBatch('categories', transformedCategories, supabaseClient, storeDatabase);
-            batchResults.push(batchRes);
-            if (batchRes.failedCount === 0) {
-              success = true;
-              const passed = transformedCategories.map(cr => String(cr.id));
-              insertedIds.categories.push(...passed);
-              break;
-            } else {
-              lastError = batchRes.errors[0]?.message || 'Unknown category chunk error';
+          // Perform batch insert
+          let lastError = '';
+          let success = false;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              const batchRes = await BatchImporter.importBatch('categories', transformed, supabaseClient, storeDatabase);
+              if (batchRes.failedCount === 0) {
+                success = true;
+                insertedIds.categories.push(...transformed.map((cr: any) => String(cr.id)));
+                summary.counts.categories += transformed.length;
+                break;
+              } else {
+                lastError = batchRes.errors[0]?.message || 'Unknown categories chunk error';
+              }
+            } catch (err: any) {
+              lastError = err.message || 'Categories network error';
             }
-          } catch (batchErr: any) {
-            lastError = batchErr.message || 'Category network error';
           }
-        }
 
-        if (success) {
-          await ImportRepository.updateChunk(jobId, catChunkNum, { status: 'success', processed_at: new Date().toISOString() });
-        } else {
-          await ImportRepository.updateChunk(jobId, catChunkNum, { status: 'failed', processed_at: new Date().toISOString() });
-          await ImportRepository.logEvent({
-            job_id: jobId,
-            event_type: 'chunk_failed',
-            message: `فشلت حزمة الفئات #${catChunkNum} بعد 3 محاولات: ${lastError}. جاري تجاوزها للمرونة السحابية.`
+          if (!success) {
+            throw new Error(`تعذر استيراد فئة المنتجات: ${lastError}`);
+          }
+
+          offset += CHUNK_SIZE;
+          summary.offset = offset;
+
+          const percent = total > 0 ? Math.min(25, Math.round((offset / total) * 25)) : 25;
+          await ImportRepository.updateJob(jobId, {
+            progress: percent,
+            current_chunk: (job.current_chunk || 0) + 1,
+            current_offset: offset,
+            current_stage: stage,
+            info: `تم استيراد ${summary.counts.categories} من فئات المنتجات بنجاح (${percent}%)...`,
+            summary,
+            inserted_ids: insertedIds
           });
         }
 
-        catOffset += CHUNK_SIZE;
-        catChunkNum++;
-      }
-
-
-      // ---- STAGE 2: Products ----
-      await ImportRepository.updateJob(jobId, { progress: 35, info: 'جاري استيراد الحزم رقم 2: منتجات المستودع...' });
-      await ImportRepository.logEvent({ job_id: jobId, event_type: 'chunk_start', message: 'تشغيل حزمة إدخال المنتجات...' });
-
-      let prodOffset = 0;
-      let prodChunkNum = 0;
-
-      while (true) {
-        const rawProducts = reader.getTableRows('items', CHUNK_SIZE, prodOffset);
-        if (rawProducts.length === 0) break;
-
-        const transformedProducts = rawProducts.map(p => {
-          const tr = DataTransformer.transformProduct(p, categoryNameMap);
-          return OrganizationInjector.inject(tr, orgId, branchId, userId);
-        });
-
-        const activeChunkIndex = catChunkNum + prodChunkNum;
-        await ImportRepository.createChunk({
-          job_id: jobId,
-          chunk_number: activeChunkIndex,
-          status: 'processing',
-          record_count: transformedProducts.length
-        });
-
-        let success = false;
-        let lastError = '';
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          try {
-            const batchRes = await BatchImporter.importBatch('products', transformedProducts, supabaseClient, storeDatabase);
-            batchResults.push(batchRes);
-            if (batchRes.failedCount === 0) {
-              success = true;
-              const passed = transformedProducts.map(cr => String(cr.id));
-              insertedIds.products.push(...passed);
-              break;
-            } else {
-              lastError = batchRes.errors[0]?.message || 'Unknown product chunk error';
-            }
-          } catch (batchErr: any) {
-            lastError = batchErr.message || 'Product network error';
-          }
-        }
-
-        if (success) {
-          await ImportRepository.updateChunk(jobId, activeChunkIndex, { status: 'success', processed_at: new Date().toISOString() });
-        } else {
-          await ImportRepository.updateChunk(jobId, activeChunkIndex, { status: 'failed', processed_at: new Date().toISOString() });
-          await ImportRepository.logEvent({
-            job_id: jobId,
-            event_type: 'chunk_failed',
-            message: `فشلت حزمة المنتجات #${prodChunkNum} بعد 3 محاولات: ${lastError}.`
+        // If we consumed all (or category check completed)
+        if (rawCategories.length === 0 || offset >= total) {
+          summary.stage = 'products';
+          summary.offset = 0;
+          await ImportRepository.updateJob(jobId, {
+            progress: 25,
+            current_offset: 0,
+            current_stage: 'products',
+            info: 'اكتملت فئات المنتجات، يمر الآن إلى المنتجات...',
+            summary,
+            inserted_ids: insertedIds
           });
         }
 
-        prodOffset += CHUNK_SIZE;
-        prodChunkNum++;
-      }
+      } else if (stage === 'products') {
+        const total = summary.totalCounts.products;
+        const rawProducts = reader.getTableRows('items', CHUNK_SIZE, offset);
 
+        if (rawProducts.length > 0) {
+          const transformed = rawProducts.map((p: any) => {
+            const tr = DataTransformer.transformProduct(p, summary.categoryNameMap);
+            return OrganizationInjector.inject(tr, orgId, branchId, userId);
+          });
 
-      // ---- STAGE 3: Customers ----
-      await ImportRepository.updateJob(jobId, { progress: 60, info: 'جاري استيراد الحزم رقم 3: حسابات العملاء وبطاقات الديون المتبقية...' });
-      await ImportRepository.logEvent({ job_id: jobId, event_type: 'chunk_start', message: 'تشغيل حزمة إدخال العملاء والديون...' });
-
-      let custOffset = 0;
-      let custChunkNum = 0;
-
-      while (true) {
-        const rawCustomers = reader.getTableRows('customers', CHUNK_SIZE, custOffset);
-        if (rawCustomers.length === 0) break;
-
-        const transformedCustomers = rawCustomers.map(c => {
-          const tr = DataTransformer.transformCustomer(c);
-          return OrganizationInjector.inject(tr, orgId, branchId, userId);
-        });
-
-        const activeChunkIndex = catChunkNum + prodChunkNum + custChunkNum;
-        await ImportRepository.createChunk({
-          job_id: jobId,
-          chunk_number: activeChunkIndex,
-          status: 'processing',
-          record_count: transformedCustomers.length
-        });
-
-        let success = false;
-        let lastError = '';
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          try {
-            const batchRes = await BatchImporter.importBatch('customers', transformedCustomers, supabaseClient, storeDatabase);
-            batchResults.push(batchRes);
-            if (batchRes.failedCount === 0) {
-              success = true;
-              const passed = transformedCustomers.map(cr => String(cr.id));
-              insertedIds.customers.push(...passed);
-              break;
-            } else {
-              lastError = batchRes.errors[0]?.message || 'Unknown customer chunk error';
+          let lastError = '';
+          let success = false;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              const batchRes = await BatchImporter.importBatch('products', transformed, supabaseClient, storeDatabase);
+              if (batchRes.failedCount === 0) {
+                success = true;
+                insertedIds.products.push(...transformed.map((cr: any) => String(cr.id)));
+                summary.counts.products += transformed.length;
+                break;
+              } else {
+                lastError = batchRes.errors[0]?.message || 'Unknown product chunk error';
+              }
+            } catch (err: any) {
+              lastError = err.message || 'Products network error';
             }
-          } catch (batchErr: any) {
-            lastError = batchErr.message || 'Customer network error';
           }
-        }
 
-        if (success) {
-          await ImportRepository.updateChunk(jobId, activeChunkIndex, { status: 'success', processed_at: new Date().toISOString() });
-        } else {
-          await ImportRepository.updateChunk(jobId, activeChunkIndex, { status: 'failed', processed_at: new Date().toISOString() });
-          await ImportRepository.logEvent({
-            job_id: jobId,
-            event_type: 'chunk_failed',
-            message: `فشلت حزمة حسابات العملاء #${custChunkNum} بعد 3 محاولات: ${lastError}.`
+          if (!success) {
+            throw new Error(`تعذر استيراد المنتجات: ${lastError}`);
+          }
+
+          offset += CHUNK_SIZE;
+          summary.offset = offset;
+
+          const percent = total > 0 ? 25 + Math.min(25, Math.round((offset / total) * 25)) : 50;
+          await ImportRepository.updateJob(jobId, {
+            progress: percent,
+            current_chunk: (job.current_chunk || 0) + 1,
+            current_offset: offset,
+            current_stage: stage,
+            info: `تم استيراد ${summary.counts.products} من منتجات المستودع بنجاح (${percent}%)...`,
+            summary,
+            inserted_ids: insertedIds
           });
         }
 
-        custOffset += CHUNK_SIZE;
-        custChunkNum++;
-      }
-
-
-      // ---- STAGE 4: Compiled Orders ----
-      await ImportRepository.updateJob(jobId, { progress: 80, info: 'جاري استيراد الحزم رقم 4: أرشيف الفواتير والمعاملات الصادرة...' });
-      await ImportRepository.logEvent({ job_id: jobId, event_type: 'chunk_start', message: 'تشغيل حزمة إدخال الفواتير الكلية...' });
-
-      let orderOffset = 0;
-      let orderChunkNum = 0;
-
-      while (true) {
-        const rawBills = reader.getTableRows('bills', CHUNK_SIZE, orderOffset);
-        if (rawBills.length === 0) break;
-
-        const billIds = rawBills.map(b => Number(b.id)).filter(id => !isNaN(id));
-        let rawTransactions: any[] = [];
-        if (billIds.length > 0) {
-          rawTransactions = reader.execQuery(`SELECT * FROM bill_transactions WHERE bill_id IN (${billIds.join(',')})`);
-        }
-
-        const compiledOrders = InvoiceJsonConverter.compileBatch(rawBills, rawTransactions).map(order => {
-          return OrganizationInjector.inject(order, orgId, branchId, userId);
-        });
-
-        const activeChunkIndex = catChunkNum + prodChunkNum + custChunkNum + orderChunkNum;
-        await ImportRepository.createChunk({
-          job_id: jobId,
-          chunk_number: activeChunkIndex,
-          status: 'processing',
-          record_count: compiledOrders.length
-        });
-
-        let success = false;
-        let lastError = '';
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          try {
-            const batchRes = await BatchImporter.importBatch('orders', compiledOrders, supabaseClient, storeDatabase);
-            batchResults.push(batchRes);
-            if (batchRes.failedCount === 0) {
-              success = true;
-              const passed = compiledOrders.map(cr => String(cr.id));
-              insertedIds.orders.push(...passed);
-              break;
-            } else {
-              lastError = batchRes.errors[0]?.message || 'Unknown orders chunk error';
-            }
-          } catch (batchErr: any) {
-            lastError = batchErr.message || 'Orders network error';
-          }
-        }
-
-        if (success) {
-          await ImportRepository.updateChunk(jobId, activeChunkIndex, { status: 'success', processed_at: new Date().toISOString() });
-        } else {
-          await ImportRepository.updateChunk(jobId, activeChunkIndex, { status: 'failed', processed_at: new Date().toISOString() });
-          await ImportRepository.logEvent({
-            job_id: jobId,
-            event_type: 'chunk_failed',
-            message: `فشلت حزمة الفواتير والمبيعات #${orderChunkNum} بعد 3 محاولات: ${lastError}.`
+        if (rawProducts.length === 0 || offset >= total) {
+          summary.stage = 'customers';
+          summary.offset = 0;
+          await ImportRepository.updateJob(jobId, {
+            progress: 50,
+            current_offset: 0,
+            current_stage: 'customers',
+            info: 'اكتملت المنتجات بالكامل، جاري الانتقال إلى حسابات العملاء...',
+            summary,
+            inserted_ids: insertedIds
           });
         }
 
-        orderOffset += CHUNK_SIZE;
-        orderChunkNum++;
+      } else if (stage === 'customers') {
+        const total = summary.totalCounts.customers;
+        const rawCustomers = reader.getTableRows('customers', CHUNK_SIZE, offset);
+
+        if (rawCustomers.length > 0) {
+          const transformed = rawCustomers.map((c: any) => {
+            const tr = DataTransformer.transformCustomer(c);
+            return OrganizationInjector.inject(tr, orgId, branchId, userId);
+          });
+
+          let lastError = '';
+          let success = false;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              const batchRes = await BatchImporter.importBatch('customers', transformed, supabaseClient, storeDatabase);
+              if (batchRes.failedCount === 0) {
+                success = true;
+                insertedIds.customers.push(...transformed.map((cr: any) => String(cr.id)));
+                summary.counts.customers += transformed.length;
+                break;
+              } else {
+                lastError = batchRes.errors[0]?.message || 'Unknown customer chunk error';
+              }
+            } catch (err: any) {
+              lastError = err.message || 'Customers network error';
+            }
+          }
+
+          if (!success) {
+            throw new Error(`تعذر استيراد حسابات العملاء: ${lastError}`);
+          }
+
+          offset += CHUNK_SIZE;
+          summary.offset = offset;
+
+          const percent = total > 0 ? 50 + Math.min(25, Math.round((offset / total) * 25)) : 75;
+          await ImportRepository.updateJob(jobId, {
+            progress: percent,
+            current_chunk: (job.current_chunk || 0) + 1,
+            current_offset: offset,
+            current_stage: stage,
+            info: `تم استيراد ${summary.counts.customers} من حسابات وديون العملاء بنجاح (${percent}%)...`,
+            summary,
+            inserted_ids: insertedIds
+          });
+        }
+
+        if (rawCustomers.length === 0 || offset >= total) {
+          summary.stage = 'orders';
+          summary.offset = 0;
+          await ImportRepository.updateJob(jobId, {
+            progress: 75,
+            current_offset: 0,
+            current_stage: 'orders',
+            info: 'اكتملت حسابات العملاء، يمر الآن إلى استيراد الفواتير والمبيعات...',
+            summary,
+            inserted_ids: insertedIds
+          });
+        }
+
+      } else if (stage === 'orders') {
+        const total = summary.totalCounts.orders;
+        const rawBills = reader.getTableRows('bills', CHUNK_SIZE, offset);
+
+        if (rawBills.length > 0) {
+          const billIds = rawBills.map((b: any) => Number(b.id)).filter((id: number) => !isNaN(id));
+          let rawTransactions: any[] = [];
+          if (billIds.length > 0) {
+            rawTransactions = reader.execQuery(`SELECT * FROM bill_transactions WHERE bill_id IN (${billIds.join(',')})`);
+          }
+
+          const transformed = InvoiceJsonConverter.compileBatch(rawBills, rawTransactions).map((order: any) => {
+            return OrganizationInjector.inject(order, orgId, branchId, userId);
+          });
+
+          let lastError = '';
+          let success = false;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              const batchRes = await BatchImporter.importBatch('orders', transformed, supabaseClient, storeDatabase);
+              if (batchRes.failedCount === 0) {
+                success = true;
+                insertedIds.orders.push(...transformed.map((cr: any) => String(cr.id)));
+                summary.counts.orders += transformed.length;
+                break;
+              } else {
+                lastError = batchRes.errors[0]?.message || 'Unknown orders chunk error';
+              }
+            } catch (err: any) {
+              lastError = err.message || 'Orders network error';
+            }
+          }
+
+          if (!success) {
+            throw new Error(`تعذر استيراد فواتير المبيعات: ${lastError}`);
+          }
+
+          offset += CHUNK_SIZE;
+          summary.offset = offset;
+
+          const percent = total > 0 ? 75 + Math.min(20, Math.round((offset / total) * 20)) : 95;
+          await ImportRepository.updateJob(jobId, {
+            progress: percent,
+            current_chunk: (job.current_chunk || 0) + 1,
+            current_offset: offset,
+            current_stage: stage,
+            info: `تم استيراد ${summary.counts.orders} من فواتير المبيعات بنجاح (${percent}%)...`,
+            summary,
+            inserted_ids: insertedIds
+          });
+        }
+
+        if (rawBills.length === 0 || offset >= total) {
+          summary.stage = 'completed';
+          summary.offset = total;
+
+          // All stages done successfully! Create the final success payload.
+          await ImportRepository.updateJob(jobId, {
+            status: 'success',
+            progress: 100,
+            current_offset: total,
+            current_stage: 'completed',
+            info: 'اكتملت عملية الاستيراد والهجرة بنجاح تام 🟢!',
+            completed_at: new Date().toISOString(),
+            inserted_ids: insertedIds,
+            summary: {
+              categories: insertedIds.categories.length,
+              products: insertedIds.products.length,
+              customers: insertedIds.customers.length,
+              orders: insertedIds.orders.length,
+              fileUrl
+            },
+            errors: []
+          });
+
+          await ImportRepository.logEvent({
+            job_id: jobId,
+            event_type: 'completed',
+            message: 'تم إنهاء ترحيل الهجرات حزمة بحزمة إلى جميع مفاصل ومستودعات البيانات المعقمة.'
+          });
+        }
       }
 
       reader.close();
+      reader = null;
 
-      // Finalize database states
-      await ImportRepository.updateJob(jobId, {
-        status: 'success',
-        progress: 100,
-        current_chunk: catChunkNum + prodChunkNum + custChunkNum + orderChunkNum,
-        info: 'اكتملت عملية الاستيراد والهجرة بنجاح تام 🟢!',
-        completed_at: new Date().toISOString(),
-        inserted_ids: insertedIds,
-        summary: {
-          categories: insertedIds.categories.length,
-          products: insertedIds.products.length,
-          customers: insertedIds.customers.length,
-          orders: insertedIds.orders.length,
-          batchResults
-        },
-        errors: []
-      });
+      // Fetch latest state to return
+      const updatedJob = await ImportRepository.getJob(jobId);
+      return this.formattedJob(updatedJob || job);
 
-      await ImportRepository.logEvent({
-        job_id: jobId,
-        event_type: 'completed',
-        message: 'تم إنهاء ترحيل الهجرات حزمة بحزمة إلى جميع مفاصل ومستودعات البيانات المعقمة.'
-      });
-
-      console.log(`[ImportService] Pipeline completed successfully for job: ${jobId}`);
     } catch (err: any) {
-      console.error(`[ImportService] Critical failure in pipeline for job ${jobId}: ${err.message}`);
+      console.error(`[ImportService] Critical failure in chunk step for job ${jobId}: ${err.message}`);
       
+      if (reader) {
+        reader.close();
+      }
+
       await ImportRepository.logEvent({
         job_id: jobId,
         event_type: 'error',
@@ -696,6 +778,23 @@ export class ImportService {
         info: `فشلت الهجرة وتراجعنا عنها لمنع الملفات المكسورة: ${err.message}`,
         errors: [{ severity: 'error', entity: 'process', message: err.message }]
       });
+
+      const failedJob = await ImportRepository.getJob(jobId);
+      return this.formattedJob(failedJob || job);
     }
+  }
+
+  private formattedJob(job: any) {
+    return {
+      id: job.id,
+      status: job.status,
+      progress: Number(job.progress),
+      info: job.info,
+      startedAt: job.created_at,
+      completedAt: job.completed_at,
+      insertedIds: typeof job.inserted_ids === 'string' ? JSON.parse(job.inserted_ids) : job.inserted_ids,
+      summary: typeof job.summary === 'string' ? JSON.parse(job.summary) : job.summary,
+      errors: typeof job.errors === 'string' ? JSON.parse(job.errors) : job.errors
+    };
   }
 }
