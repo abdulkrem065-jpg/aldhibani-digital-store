@@ -93,10 +93,36 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Health Checks for Cloud Run (Readiness & Liveness probes)
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    supabaseInitialized: supabase !== null
+  });
 });
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/api/health', async (req, res) => {
+  const checkDb = req.query.checkDb === 'true';
+  let dbStatus = 'not_configured';
+  if (supabase) {
+    dbStatus = 'configured';
+    if (checkDb) {
+      try {
+        const { error } = await supabase.from('staff_users').select('id').limit(1);
+        if (error) {
+          dbStatus = `error: ${error.message}`;
+        } else {
+          dbStatus = 'connected';
+        }
+      } catch (err: any) {
+        dbStatus = `error: ${err.message}`;
+      }
+    }
+  }
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    databaseStatus: dbStatus,
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
 app.use(express.json({ limit: '100mb' }));
@@ -791,14 +817,14 @@ app.get('/api/products', async (req, res) => {
   if (supabase) {
     try {
       const { data, error } = await supabase.from('products').select('*');
-      if (!error && data && data.length > 0) {
-        storeDatabase.products = data;
+      if (!error && data) {
+        return res.json(data);
       }
     } catch (e) {
       console.error('[Supabase GET Products Error]', e);
     }
   }
-  res.json(storeDatabase.products);
+  res.json([]);
 });
 
 // POST update products (Admin or Telecom Manager)
@@ -814,52 +840,47 @@ app.post('/api/products', async (req, res) => {
     product_image_url, is_ai_suggested, ai_suggested_url
   } = req.body;
   
-  let finalProduct: Product;
-  // Find or create
-  const idx = storeDatabase.products.findIndex(p => p.id === id);
-  if (idx !== -1) {
-    storeDatabase.products[idx] = {
-      ...storeDatabase.products[idx],
-      nameAR: nameAR !== undefined ? nameAR : storeDatabase.products[idx].nameAR,
-      nameEN: nameEN !== undefined ? nameEN : storeDatabase.products[idx].nameEN,
-      descriptionAR: descriptionAR !== undefined ? descriptionAR : storeDatabase.products[idx].descriptionAR,
-      descriptionEN: descriptionEN !== undefined ? descriptionEN : storeDatabase.products[idx].descriptionEN,
-      priceYER: priceYER !== undefined ? Number(priceYER) : storeDatabase.products[idx].priceYER,
-      isAvailable: isAvailable !== undefined ? Boolean(isAvailable) : storeDatabase.products[idx].isAvailable,
-      stock: stock !== undefined ? Number(stock) : storeDatabase.products[idx].stock,
-      category: category !== undefined ? category : storeDatabase.products[idx].category,
-      imageUrl: imageUrl !== undefined ? imageUrl : storeDatabase.products[idx].imageUrl,
-      brand: brand !== undefined ? brand : storeDatabase.products[idx].brand,
-      rechargeAmount: rechargeAmount !== undefined ? rechargeAmount : storeDatabase.products[idx].rechargeAmount,
-      product_image_url: product_image_url !== undefined ? product_image_url : storeDatabase.products[idx].product_image_url,
-      is_ai_suggested: is_ai_suggested !== undefined ? Boolean(is_ai_suggested) : storeDatabase.products[idx].is_ai_suggested,
-      ai_suggested_url: ai_suggested_url !== undefined ? ai_suggested_url : storeDatabase.products[idx].ai_suggested_url,
-    };
-    finalProduct = storeDatabase.products[idx];
-  } else {
-    // Add new product
-    finalProduct = {
-      id: id || `ph-el-${Date.now()}`,
-      nameAR: nameAR || 'صنف جديد',
-      nameEN: nameEN || 'New Product',
-      descriptionAR: descriptionAR || '',
-      descriptionEN: descriptionEN || '',
-      category: category || 'PHYSICAL_GROCERY',
-      priceYER: Number(priceYER || 1000),
-      imageUrl: imageUrl || 'https://images.unsplash.com/photo-1546054454-aa26e2b734c7?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-      isAvailable: isAvailable !== undefined ? Boolean(isAvailable) : true,
-      stock: stock !== undefined ? Number(stock) : 50,
-      brand: brand,
-      rechargeAmount: rechargeAmount,
-      product_image_url: product_image_url,
-      is_ai_suggested: is_ai_suggested,
-      ai_suggested_url: ai_suggested_url,
-    };
-    storeDatabase.products.push(finalProduct);
-  }
+  const finalId = id || `ph-el-${Date.now()}`;
+  let finalProduct: any = {
+    id: finalId,
+    nameAR: nameAR || 'صنف جديد',
+    nameEN: nameEN || 'New Product',
+    descriptionAR: descriptionAR || '',
+    descriptionEN: descriptionEN || '',
+    category: category || 'PHYSICAL_GROCERY',
+    priceYER: Number(priceYER || 1000),
+    imageUrl: imageUrl || 'https://images.unsplash.com/photo-1546054454-aa26e2b734c7?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
+    isAvailable: isAvailable !== undefined ? Boolean(isAvailable) : true,
+    stock: stock !== undefined ? Number(stock) : 50,
+    brand: brand || null,
+    rechargeAmount: rechargeAmount || null,
+    product_image_url: product_image_url || null,
+    is_ai_suggested: is_ai_suggested !== undefined ? Boolean(is_ai_suggested) : false,
+    ai_suggested_url: ai_suggested_url || null,
+  };
 
   if (supabase) {
     try {
+      const { data: existing, error: fetchErr } = await supabase.from('products').select('*').eq('id', finalId).maybeSingle();
+      if (!fetchErr && existing) {
+        finalProduct = {
+          ...existing,
+          nameAR: nameAR !== undefined ? nameAR : existing.nameAR,
+          nameEN: nameEN !== undefined ? nameEN : existing.nameEN,
+          descriptionAR: descriptionAR !== undefined ? descriptionAR : existing.descriptionAR,
+          descriptionEN: descriptionEN !== undefined ? descriptionEN : existing.descriptionEN,
+          priceYER: priceYER !== undefined ? Number(priceYER) : existing.priceYER,
+          isAvailable: isAvailable !== undefined ? Boolean(isAvailable) : existing.isAvailable,
+          stock: stock !== undefined ? Number(stock) : existing.stock,
+          category: category !== undefined ? category : existing.category,
+          imageUrl: imageUrl !== undefined ? imageUrl : existing.imageUrl,
+          brand: brand !== undefined ? brand : existing.brand,
+          rechargeAmount: rechargeAmount !== undefined ? rechargeAmount : existing.rechargeAmount,
+          product_image_url: product_image_url !== undefined ? product_image_url : existing.product_image_url,
+          is_ai_suggested: is_ai_suggested !== undefined ? Boolean(is_ai_suggested) : existing.is_ai_suggested,
+          ai_suggested_url: ai_suggested_url !== undefined ? ai_suggested_url : existing.ai_suggested_url,
+        };
+      }
       await supabase.from('products').upsert(finalProduct);
     } catch (e) {
       console.error('[Supabase Products Upsert Error]', e);
@@ -877,20 +898,19 @@ app.post('/api/products/delete', async (req, res) => {
   }
 
   const { id } = req.body;
-  const idx = storeDatabase.products.findIndex(p => p.id === id);
-  if (idx !== -1) {
-    const deleted = storeDatabase.products.splice(idx, 1)[0];
-    if (supabase) {
-      try {
-        await supabase.from('products').delete().eq('id', id);
-      } catch (e) {
-        console.error('[Supabase Products Delete Error]', e);
+  let deletedProduct: any = { id };
+  if (supabase) {
+    try {
+      const { data } = await supabase.from('products').select('*').eq('id', id).maybeSingle();
+      if (data) {
+        deletedProduct = data;
       }
+      await supabase.from('products').delete().eq('id', id);
+    } catch (e) {
+      console.error('[Supabase Products Delete Error]', e);
     }
-    res.json({ success: true, product: deleted });
-  } else {
-    res.status(404).json({ error: 'الصنف غير موجود!' });
   }
+  res.json({ success: true, product: deletedProduct });
 });
 
 // POST clear all data or specific datasets for pristine setups
@@ -903,7 +923,6 @@ app.post('/api/clear-all', async (req, res) => {
   const { target } = req.body; // 'PRODUCTS' | 'CATEGORIES' | 'ORDERS' | 'DEBTS' | 'ALL'
 
   if (target === 'PRODUCTS' || target === 'ALL') {
-    storeDatabase.products = [];
     if (supabase) {
       try {
         await supabase.from('products').delete().neq('id', 'keep-dummy');
@@ -984,16 +1003,23 @@ app.post('/api/orders', async (req, res) => {
   };
 
   // Adjust inventories for physical products in the backend!
-  items.forEach((item: any) => {
-    const pId = item.product.id;
-    const storeProd = storeDatabase.products.find(p => p.id === pId);
-    if (storeProd && storeProd.stock !== undefined) {
-      storeProd.stock = Math.max(0, storeProd.stock - item.quantity);
-      if (supabase) {
-        supabase.from('products').upsert(storeProd).then(() => {});
+  if (supabase) {
+    try {
+      for (const item of items) {
+        const pId = item.product.id;
+        const { data: storeProds, error: fetchErr } = await supabase.from('products').select('*').eq('id', pId);
+        if (!fetchErr && storeProds && storeProds.length > 0) {
+          const storeProd = storeProds[0];
+          if (storeProd.stock !== undefined) {
+            storeProd.stock = Math.max(0, storeProd.stock - item.quantity);
+            await supabase.from('products').upsert(storeProd);
+          }
+        }
       }
+    } catch (err) {
+      console.error('[Supabase Order Stock Resolution Error]', err);
     }
-  });
+  }
 
   storeDatabase.orders.unshift(newOrder); // Add to beginning of track list
 

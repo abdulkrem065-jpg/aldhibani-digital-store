@@ -1,0 +1,46 @@
+# Ignore Node dependency directories
+node_modules
+npm-debug.log
+yarn-error.log
+.pnpm-store
+
+# Ignore build artifacts and caches
+dist
+build
+.svelte-kit
+.next
+.nuxt
+out
+.cache
+.parcel-cache
+.eslintcache
+
+# Ignore environmental configurations and local secrets
+.env
+.env.production
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.gcloudignore
+.git
+.github
+.gitignore
+*.md
+
+# Ignore OS-generated files and editor configurations
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Temporary database files
+*.db
+*.sqlite
+*.sqlite3
+backup_temp.*

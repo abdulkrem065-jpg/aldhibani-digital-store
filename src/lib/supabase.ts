@@ -116,6 +116,8 @@ const INITIAL_YOUTH_WORKFORCE: YouthWorkforceProfile[] = [
 
 // High-durability local client-side cloud database manager (Supabase / Serverless wrapper)
 export class SupabaseServerlessDB {
+  private static clientProducts: Product[] = [];
+
   private static get<T>(key: string, defaultValue: T): T {
     try {
       const val = localStorage.getItem(key);
@@ -184,7 +186,7 @@ export class SupabaseServerlessDB {
 
       if (configData) this.set('aldhibani_local_config', configData);
       if (categoriesData && categoriesData.length > 0) this.set('aldhibani_local_categories', categoriesData);
-      if (productsData && productsData.length > 0) this.set('aldhibani_local_products', productsData);
+      this.clientProducts = productsData || [];
       if (ordersData && ordersData.length > 0) this.set('aldhibani_local_orders', ordersData);
       if (debtsData && debtsData.length > 0) this.set('aldhibani_local_debts', debtsData);
       if (staffData && staffData.length > 0) this.set('aldhibani_local_staff', staffData);
@@ -261,7 +263,7 @@ export class SupabaseServerlessDB {
 
   // --- PRODUCTS ---
   static getProducts(): Product[] {
-    return this.get<Product[]>('aldhibani_local_products', DEFAULT_PRODUCTS);
+    return this.clientProducts;
   }
 
   static saveProduct(prod: Product): Product[] {
@@ -272,20 +274,20 @@ export class SupabaseServerlessDB {
     } else {
       list.push(prod);
     }
-    this.set('aldhibani_local_products', list);
+    this.clientProducts = list;
     this.asyncUpsert('products', prod);
     return list;
   }
 
   static deleteProduct(id: string): Product[] {
     const list = this.getProducts().filter(p => p.id !== id);
-    this.set('aldhibani_local_products', list);
+    this.clientProducts = list;
     this.asyncDelete('products', id);
     return list;
   }
 
   static clearAllProducts(): void {
-    this.set('aldhibani_local_products', []);
+    this.clientProducts = [];
     if (supabase) {
       supabase.from('products').delete().neq('id', 'keep-dummy').then(() => {});
     }

@@ -1,0 +1,44 @@
+name: Cloud Run Deployment CI
+
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master", "develop" ]
+
+jobs:
+  verify:
+    name: Build, Dockerize & Smoke Verify
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js Runtime (v20)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Linters / Type Safety Check
+        run: npm run lint
+
+      - name: Compile and Bundle Application
+        run: npm run build
+
+      - name: Run Background Application Server
+        run: |
+          npm run start &
+          # Give Node.js server 3 seconds to fully initialize and bind to default port 3000
+          sleep 3
+
+      - name: Execute Live Smoke Verification Suites
+        run: npm run test:smoke http://localhost:3000
+
+      - name: Verify Dockerfile Building Process
+        run: |
+          docker build -t gcr-applet-image:${{ github.sha }} .

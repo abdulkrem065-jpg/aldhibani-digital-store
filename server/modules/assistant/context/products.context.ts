@@ -13,11 +13,7 @@ export async function getProductsContext(storeDatabase: any, supabase: any, orgI
       const { data, error } = await query;
       if (!error && data) {
         products = data;
-      } else {
-        products = storeDatabase.products || [];
       }
-    } else {
-      products = storeDatabase.products || [];
     }
 
     const totalCount = products.length;

@@ -326,7 +326,6 @@ export default function App() {
       if (productsRes && productsRes.ok) {
         const prodData = await productsRes.json();
         setProducts(prodData);
-        saveItem('aldhibani_local_products', prodData);
       }
       if (categoriesRes && categoriesRes.ok) {
         const catData = await categoriesRes.json();
@@ -575,7 +574,6 @@ export default function App() {
                 products={products}
                 onProductsChanged={(updated) => {
                   setProducts(updated);
-                  saveItem('aldhibani_local_products', updated);
                 }}
                 banners={banners}
                 onBannersChanged={(updated) => setBanners(updated)}

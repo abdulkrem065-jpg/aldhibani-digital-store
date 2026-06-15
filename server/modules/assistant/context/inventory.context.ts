@@ -13,11 +13,7 @@ export async function getInventoryContext(storeDatabase: any, supabase: any, org
       const { data, error } = await query;
       if (!error && data) {
         products = data;
-      } else {
-        products = storeDatabase.products || [];
       }
-    } else {
-      products = storeDatabase.products || [];
     }
 
     const totalProducts = products.length;
