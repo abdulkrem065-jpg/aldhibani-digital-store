@@ -23,7 +23,7 @@ import {
   DEFAULT_ORDERS, DEFAULT_DEBTS, DEFAULT_STAFF, DEFAULT_BANNERS,
   getSavedItem, saveItem 
 } from './data/defaultData';
-import { SupabaseServerlessDB } from './lib/supabase';
+import { SupabaseServerlessDB, supabase } from './lib/supabase';
 import { t } from './lib/translations';
 import { AssistantProvider } from './modules/assistant/providers/AssistantProvider';
 import { FloatingChatButton } from './modules/assistant/components/FloatingChatButton';
@@ -344,8 +344,56 @@ export default function App() {
     }
   };
 
+  const fetchProductsOnly = async () => {
+    try {
+      const res = await fetch('/api/products');
+      if (res.ok) {
+        const prodData = await res.json();
+        setProducts(prodData);
+        SupabaseServerlessDB.setProducts(prodData);
+        console.log('⚡ [Realtime Sync] Mutated client state after receiving event!');
+      }
+    } catch (e) {
+      console.error('[Realtime Sync] Re-fetching products on event failed:', e);
+    }
+  };
+
   useEffect(() => {
     fetchStorefrontData();
+  }, []);
+
+  // Subscribe to real-time events from Supabase on postgres_changes and custom hard-refresh broadcasts
+  useEffect(() => {
+    if (!supabase) return;
+
+    console.log('🔗 [Realtime Sync] Initializing global listeners for table "products"...');
+
+    const channel = supabase
+      .channel('realtime:products_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'products' },
+        (payload) => {
+          console.log('⚡ [Realtime Sync] Database table change detected (postgres_changes):', payload);
+          fetchProductsOnly();
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'hard-refresh' },
+        (payload) => {
+          console.log('⚡ [Realtime Sync] Custom hard-refresh broadcast command received:', payload);
+          fetchProductsOnly();
+        }
+      )
+      .subscribe((status) => {
+        console.log(`⚡ [Realtime Sync] Connection subscription status: ${status}`);
+      });
+
+    return () => {
+      console.log('🔌 [Realtime Sync] Dismounting products listener...');
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Slider autoplay effect

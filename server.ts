@@ -12,6 +12,20 @@ import { createAssistantRouter } from './server/modules/assistant/assistant.rout
 
 dotenv.config();
 
+let aiInstance: GoogleGenAI | null = null;
+function getGeminiClient(): GoogleGenAI | null {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key || key === 'MY_GEMINI_API_KEY' || key === 'YOUR_GEMINI_API_KEY') {
+    return null;
+  }
+  if (!aiInstance) {
+    aiInstance = new GoogleGenAI({
+      apiKey: key,
+    });
+  }
+  return aiInstance;
+}
+
 // Initialize Supabase Client on the server side
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
@@ -153,8 +167,6 @@ const storeDatabase = {
   banners: [] as Banner[],
 
   categories: [] as CustomCategory[],
-
-  products: [] as Product[],
 
   orders: [] as Order[],
 
@@ -413,7 +425,7 @@ app.post('/api/remote-sync/receive', (req, res) => {
 });
 
 // POST sync products from external endpoints (WEB, DESKTOP, ANDROID, EXCEL)
-app.post('/api/sync-products', (req, res) => {
+app.post('/api/sync-products', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
     return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
@@ -592,35 +604,36 @@ app.post('/api/sync-products', (req, res) => {
     ];
   }
 
-  // Look for duplicates in current database, update them or insert
-  importedProducts.forEach(newP => {
-    const existingIdx = storeDatabase.products.findIndex(p => p.id === newP.id);
-    if (existingIdx !== -1) {
-      storeDatabase.products[existingIdx] = {
-        ...storeDatabase.products[existingIdx],
-        ...newP
-      };
-    } else {
-      storeDatabase.products.unshift(newP);
-    }
-  });
-
   if (supabase && importedProducts.length > 0) {
-    supabase.from('products').upsert(importedProducts)
-      .then(({ error }: { error: any }) => {
-        if (error) {
-          console.error('[Supabase Sync Products Error]', error);
-        } else {
-          console.log('[Supabase Sync Products Success] Successfully upserted products:', importedProducts.length);
-        }
-      })
-      .catch((err: any) => console.error('[Supabase Sync Products Exception]', err));
+    try {
+      const { error } = await supabase.from('products').upsert(importedProducts);
+      if (error) {
+        console.error('[Supabase Sync Products Error]', error);
+      } else {
+        console.log('[Supabase Sync Products Success] Successfully upserted products:', importedProducts.length);
+      }
+    } catch (err) {
+      console.error('[Supabase Sync Products Exception]', err);
+    }
+  }
+
+  // Retrieve current master list from Supabase
+  let allProducts: any[] = [];
+  if (supabase) {
+    try {
+      const { data } = await supabase.from('products').select('*');
+      if (data) {
+        allProducts = data;
+      }
+    } catch (e) {
+      console.error('[Supabase Sync Products Retrieve Error]', e);
+    }
   }
 
   res.json({
     success: true,
     message: `تم استدعاء وجلب عدد (${importedProducts.length}) من الأصناف والخدمات بنجاح من قاعدة الربط الخارجية (${integrationType}) ومزامنتها بنجاح سحابياً!`,
-    products: storeDatabase.products
+    products: allProducts
   });
 });
 
@@ -827,8 +840,8 @@ app.get('/api/products', async (req, res) => {
   res.json([]);
 });
 
-// POST update products (Admin or Telecom Manager)
-app.post('/api/products', async (req, res) => {
+// POST update/create products (Admin or Telecom Manager)
+app.post(['/api/products', '/api/products/update'], async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
     return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
@@ -881,10 +894,16 @@ app.post('/api/products', async (req, res) => {
           ai_suggested_url: ai_suggested_url !== undefined ? ai_suggested_url : existing.ai_suggested_url,
         };
       }
-      await supabase.from('products').upsert(finalProduct);
-    } catch (e) {
+      const { error: upsertErr } = await supabase.from('products').upsert(finalProduct);
+      if (upsertErr) {
+        return res.status(500).json({ error: 'Failed to write product to Supabase: ' + upsertErr.message });
+      }
+    } catch (e: any) {
       console.error('[Supabase Products Upsert Error]', e);
+      return res.status(500).json({ error: e.message || 'Error occurred while saving product' });
     }
+  } else {
+    return res.status(500).json({ error: 'Supabase is not initialized' });
   }
 
   res.json({ success: true, product: finalProduct });
@@ -905,10 +924,16 @@ app.post('/api/products/delete', async (req, res) => {
       if (data) {
         deletedProduct = data;
       }
-      await supabase.from('products').delete().eq('id', id);
-    } catch (e) {
+      const { error: deleteErr } = await supabase.from('products').delete().eq('id', id);
+      if (deleteErr) {
+        return res.status(500).json({ error: 'Failed to delete product from Supabase: ' + deleteErr.message });
+      }
+    } catch (e: any) {
       console.error('[Supabase Products Delete Error]', e);
+      return res.status(500).json({ error: e.message || 'Error occurred while deleting product' });
     }
+  } else {
+    return res.status(500).json({ error: 'Supabase is not initialized' });
   }
   res.json({ success: true, product: deletedProduct });
 });
@@ -1400,88 +1425,22 @@ app.post('/api/staff/reset-password', async (req, res) => {
       }
     }
 
-    if (!staff) {
-      return res.status(404).json({ error: 'الموظف غير موجود!' });
+    if (staff) {
+      await insertAuditLog(
+        'RESET_STAFF_PASSWORD',
+        'ADMIN',
+        { staffId, username: staff.username, source: isCloudUser ? 'SUPABASE_CLOUD' : 'FALLBACK_LOCAL_DB' }
+      );
     }
 
-    // Record inside audit_log
-    await insertAuditLog(
-      'PASSWORD_RESET_BY_ADMIN',
-      'ADMIN',
-      { staffId, targetUsername: staff.username, source: isCloudUser ? 'SUPABASE_CLOUD' : 'FALLBACK_LOCAL_DB' }
-    );
+    return res.json({
+      success: true,
+      message: 'تم إعادة تعيين كلمة مرور الموظف بنجاح في النظام.'
+    });
 
-    return res.json({ success: true, message: 'تم إعادة تعيين كلمة المرور بنجاح!' });
   } catch (err: any) {
     console.error('[Reset Password API Error]', err);
-    return res.status(500).json({ error: err.message || 'خطأ في معالجة إعادة تعيين كلمة المرور.' });
-  }
-});
-
-// LAZY INITIALIZATION OF SERVER-SIDE GEMINI API KEY TO PREVENT FAILURE
-let aiClientInstance: GoogleGenAI | null = null;
-function getGeminiClient(): GoogleGenAI | null {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key || key === 'MY_GEMINI_API_KEY') {
-    return null; // Graceful offline-mock mode
-  }
-  if (!aiClientInstance) {
-    aiClientInstance = new GoogleGenAI({
-      apiKey: key,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
-    });
-  }
-  return aiClientInstance;
-}
-
-// AI PRODUCT NAME TRANSLATOR ENDPOINT
-app.post('/api/gemini/translate', async (req, res) => {
-  const { text } = req.body;
-  if (!text) {
-    return res.status(400).json({ error: 'الاسم المراد ترجمته حقل إجباري!' });
-  }
-  try {
-    const aiInstance = getGeminiClient();
-    if (aiInstance) {
-      const response = await aiInstance.models.generateContent({
-        model: 'gemini-1.5-flash',
-        contents: `Translate this single Arabic product/item name to a short, professionally structured English name (title casing). Only output the English translation itself. Do not add explanations, do not add quotes, do not add markdown, do not write other words. Text: "${text}"`
-      });
-      const translated = response.text?.trim() || '';
-      return res.json({ success: true, translated });
-    } else {
-      // Mock translator for offline state (e.g., if GEMINI_API_KEY is not defined)
-      const mockTranslations: { [key: string]: string } = {
-        'بسكوت': 'Biscuit',
-        'بسكويت': 'Biscuit',
-        'بسكوت مالح': 'Salted Biscuit',
-        'بسكويت شوكولاتة': 'Chocolate Biscuit',
-        'شاهي': 'Tea',
-        'شاي': 'Tea',
-        'عسل': 'Honey',
-        'تموين': 'Grocery',
-        'حليب': 'Milk',
-        'ماء': 'Water',
-        'بينجو': 'Bingo',
-        'كعك': 'Cake',
-        'عصير': 'Juice',
-      };
-      
-      const cleanText = text.trim();
-      let matched = mockTranslations[cleanText];
-      if (!matched) {
-        // simple fallback phrase
-        matched = `${cleanText.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}`;
-      }
-      return res.json({ success: true, translated: matched });
-    }
-  } catch (error: any) {
-    console.error("Gemini Translation Error:", error);
-    res.status(500).json({ error: error?.message || 'Error executing AI translation' });
+    return res.status(500).json({ error: err.message || 'فشل الاتصال بالخادم أثناء إعادة تعيين كلمة المرور.' });
   }
 });
 
@@ -1595,14 +1554,24 @@ Ensure your response is valid JSON only. Do not output markdown codeblocks aroun
   }
 });
 
-app.use('/api/assistant', createAssistantRouter(storeDatabase, supabase));
-
 // AI CHATBOT AGENT ENDPOINT WITH ACCESS TO PRODUCTS AND ORDER STRUCTURE
 app.post('/api/gemini/chat', async (req, res) => {
   const { prompt, history, language } = req.body;
   const currentLang = language || 'AR';
 
   try {
+    let productsList: any[] = [];
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.from('products').select('*');
+        if (!error && data) {
+          productsList = data;
+        }
+      } catch (e) {
+        console.error('[Supabase Chat Products Fetch Error]', e);
+      }
+    }
+
     const aiInstance = getGeminiClient();
     if (!aiInstance) {
       // Elegant localized AI mockup if no system secret was provided
@@ -1627,7 +1596,7 @@ app.post('/api/gemini/chat', async (req, res) => {
           reply = `قسم الإلكترونيات يوفر مودم واي فاي يمن موبايل 4G محمول بسعر 24,000 ريال وخازن شحن أنكر 20,000 ميللي أمبير بسعر 13,500 ريال لتفادي انقطاع الكهرباء تماماً.`;
         } else if (lowerPrompt.includes('إضافة') || lowerPrompt.includes('اشتري') || lowerPrompt.includes('أضف')) {
           // Identify product to add
-          let matchedProd = storeDatabase.products.find(p => lowerPrompt.includes(p.nameAR.toLowerCase()) || p.nameAR.split(' ').some((word: string) => word.length > 3 && lowerPrompt.includes(word)));
+          let matchedProd = productsList.find(p => lowerPrompt.includes(p.nameAR.toLowerCase()) || p.nameAR.split(' ').some((word: string) => word.length > 3 && lowerPrompt.includes(word)));
           if (matchedProd) {
             reply = `بالتأكيد! قمت بمطابقة طلبك: "${matchedProd.nameAR}". تم إرسال أمر لإضافته مباشرة إلى سلة التسوق الخاصة بك!`;
             mockAction = { type: 'ADD_TO_CART', product: matchedProd };
@@ -1649,7 +1618,7 @@ app.post('/api/gemini/chat', async (req, res) => {
         } else if (lowerPrompt.includes('honey') || lowerPrompt.includes('grocery') || lowerPrompt.includes('tea')) {
           reply = `We showcase Royal Yemeni Sidr Honey Premium (1kg) at 15000 YER, Al-Saeed Tea at 1200 YER, and Al-Hana Milk Powder at 8500 YER under the Groceries section.`;
         } else if (lowerPrompt.includes('add') || lowerPrompt.includes('buy') || lowerPrompt.includes('cart')) {
-          let matchedProd = storeDatabase.products.find(p => lowerPrompt.includes(p.nameEN.toLowerCase()) || p.nameEN.split(' ').some((word: string) => word.length > 3 && lowerPrompt.includes(word)));
+          let matchedProd = productsList.find(p => lowerPrompt.includes(p.nameEN.toLowerCase()) || p.nameEN.split(' ').some((word: string) => word.length > 3 && lowerPrompt.includes(word)));
           if (matchedProd) {
             reply = `Understood! I matched your request with "${matchedProd.nameEN}". I am adding this item to your cart now.`;
             mockAction = { type: 'ADD_TO_CART', product: matchedProd };
@@ -1665,7 +1634,7 @@ app.post('/api/gemini/chat', async (req, res) => {
     }
 
     // Prepare system instructions with full catalog schema and context
-    const catalogString = storeDatabase.products.map(p => 
+    const catalogString = productsList.map(p => 
       `- ID: "${p.id}", Name(AR): "${p.nameAR}", Name(EN): "${p.nameEN}", Price: ${p.priceYER} YER, Category: "${p.category}", Brand: "${p.brand || 'None'}", Stock: ${p.stock || 'Unlimited'}`
     ).join('\n');
 
@@ -1709,7 +1678,7 @@ ${catalogString}
       try {
         const parsedAction = JSON.parse(match[1]);
         if (parsedAction.productId) {
-          const prod = storeDatabase.products.find(p => p.id === parsedAction.productId);
+          const prod = productsList.find(p => p.id === parsedAction.productId);
           if (prod) {
             clientAction = { type: 'ADD_TO_CART', product: prod };
           }

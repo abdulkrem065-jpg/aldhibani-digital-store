@@ -266,6 +266,27 @@ export class SupabaseServerlessDB {
     return this.clientProducts;
   }
 
+  static setProducts(prods: Product[]): void {
+    this.clientProducts = prods;
+  }
+
+  static broadcastHardRefresh(): void {
+    if (!supabase) return;
+    try {
+      supabase.channel('realtime:products_sync').send({
+        type: 'broadcast',
+        event: 'hard-refresh',
+        payload: { timestamp: Date.now() }
+      }).then(() => {
+        console.log('⚡ [Realtime Broadcast] Hard-refresh broadcast completed successfully!');
+      }).catch((err) => {
+        console.warn('[Realtime Broadcast] Broadcast failed:', err);
+      });
+    } catch (e) {
+      console.warn('[Realtime Broadcast] Broadcast exception:', e);
+    }
+  }
+
   static saveProduct(prod: Product): Product[] {
     const list = this.getProducts();
     const idx = list.findIndex(p => p.id === prod.id);
@@ -276,6 +297,7 @@ export class SupabaseServerlessDB {
     }
     this.clientProducts = list;
     this.asyncUpsert('products', prod);
+    this.broadcastHardRefresh();
     return list;
   }
 
@@ -283,13 +305,16 @@ export class SupabaseServerlessDB {
     const list = this.getProducts().filter(p => p.id !== id);
     this.clientProducts = list;
     this.asyncDelete('products', id);
+    this.broadcastHardRefresh();
     return list;
   }
 
   static clearAllProducts(): void {
     this.clientProducts = [];
     if (supabase) {
-      supabase.from('products').delete().neq('id', 'keep-dummy').then(() => {});
+      supabase.from('products').delete().neq('id', 'keep-dummy').then(() => {
+        this.broadcastHardRefresh();
+      });
     }
   }
 

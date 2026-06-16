@@ -152,6 +152,13 @@ export default function Dashboard({
   const [staffList, setStaffList] = useState<StaffUser[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Sync internal products state with prop updates caused by external real-time events
+  useEffect(() => {
+    if (initialProductsProp && initialProductsProp.length > 0) {
+      setProducts(initialProductsProp);
+    }
+  }, [initialProductsProp]);
+
   // Password Change & Reset States
   const [currentPass, setCurrentPass] = useState('');
   const [newPass, setNewPass] = useState('');
