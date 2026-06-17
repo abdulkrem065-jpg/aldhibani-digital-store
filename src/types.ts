@@ -82,6 +82,7 @@ export interface StoreConfig {
   remoteLastSyncTime?: string;
   remoteSyncStatus?: 'CONNECTED' | 'DISCONNECTED' | 'SYNCING';
   orgId?: string;
+  branchId?: string;
 }
 
 export type ProductCategory = string;

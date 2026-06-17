@@ -1315,11 +1315,13 @@ export default function Dashboard({
     };
 
     try {
+      console.log("PRODUCT PAYLOAD", payload);
       // 1. Instantly save in our serverless database
       SupabaseServerlessDB.saveProduct(payload);
 
       // 2. Background POST backup
       try {
+        console.log("Reaching POST /api/products");
         const response = await fetch('/api/products', {
           method: 'POST',
           headers: {
@@ -8117,7 +8119,7 @@ export default function Dashboard({
                     
                     // Auto-Routing rule: check keyword matches
                     const isBusinessQuery = /مخزن|سلع|مبيعات|موظفين|جرد|حساب|أرباح|دين|ذمم|orders|sales|stock|staff|debts|products|categories|recharge/i.test(query);
-                    const queryMode = isBusinessQuery ? 'BUSINESS' : 'GLOBAL';
+                    const queryMode = (isBusinessQuery ? 'BUSINESS' : 'GLOBAL') as 'BUSINESS' | 'GLOBAL';
 
                     // Add user message
                     const updatedHistory = [...saasChatHistory, { sender: 'user' as const, text: query, mode: queryMode }];

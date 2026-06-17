@@ -216,7 +216,29 @@ export class SupabaseServerlessDB {
     console.log(`=== [Supabase AsyncUpsert PRE-WRITE TRACE] Table: ${table} ===`);
     console.log(`Payload:`, JSON.stringify(finalPayload, null, 2));
     try {
-      const { status, statusText, error } = await supabase.from(table).upsert(finalPayload);
+      if (table === 'products') {
+        console.log("PRODUCT PAYLOAD", payload);
+        console.log("UPSERT START", JSON.stringify(finalPayload, null, 2));
+        console.log("Reaching supabase.from('products').upsert(...)");
+      }
+      
+      const result = await supabase.from(table).upsert(finalPayload);
+      const { status, statusText, error } = result;
+      const data = (result as any).data;
+      
+      if (table === 'products') {
+        console.log("SUPABASE RESPONSE", { data, error, status });
+        if (error) {
+          console.log("error?.code", error?.code);
+          console.log("error?.message", error?.message);
+          console.log("error?.details", error?.details);
+          console.log("error?.hint", error?.hint);
+          console.log("UPSERT RESULT: FAILURE");
+        } else {
+          console.log("UPSERT RESULT: SUCCESS");
+        }
+      }
+
       console.log(`[Supabase AsyncUpsert RESULT] Status: ${status} (${statusText})`);
       if (error) {
         console.error(`❌ [Supabase AsyncUpsert Error] Write failed for table '${table}':`);

@@ -684,13 +684,27 @@ app.post('/api/sync-products', async (req, res) => {
   if (supabase && importedProducts.length > 0) {
     try {
       const mappedImported = importedProducts.map(mapProductToDB);
-      const { error } = await supabase.from('products').upsert(mappedImported);
+      console.log("PRODUCT PAYLOAD", importedProducts);
+      console.log("UPSERT START", JSON.stringify(mappedImported, null, 2));
+      console.log("Reaching supabase.from('products').upsert(...)");
+      
+      const result = await supabase.from('products').upsert(mappedImported);
+      const { status, error } = result;
+      const data = (result as any).data;
+      
+      console.log("SUPABASE RESPONSE", { data, error, status });
       if (error) {
+        console.log("error?.code", error?.code);
+        console.log("error?.message", error?.message);
+        console.log("error?.details", error?.details);
+        console.log("error?.hint", error?.hint);
+        console.log("UPSERT RESULT: FAILURE");
         console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(error, null, 2));
       } else {
+        console.log("UPSERT RESULT: SUCCESS");
         console.log('[Supabase Sync Products Success] Successfully upserted products:', importedProducts.length);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(err, null, 2));
     }
   }
@@ -926,6 +940,7 @@ app.get('/api/products', async (req, res) => {
 
 // POST update/create products (Admin or Telecom Manager)
 app.post(['/api/products', '/api/products/update'], async (req, res) => {
+  console.log("POST /api/products reached");
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== DECLARED_STORE_ROUTER_AUTH_TOKEN) {
     return res.status(403).json({ error: 'صلاحيات غير كافية، يرجى التوثيق أولاً!' });
@@ -984,19 +999,28 @@ app.post(['/api/products', '/api/products/update'], async (req, res) => {
       }
       console.log('=== [DIAGностиك LOG RUNTIME TRACE] ===');
       console.log('TABLE NAME: products');
-      console.log('PAYLOAD SENDING:', JSON.stringify(mapProductToDB(finalProduct), null, 2));
+      console.log("PRODUCT PAYLOAD", finalProduct);
+      console.log("UPSERT START", JSON.stringify(mapProductToDB(finalProduct), null, 2));
+      console.log("Reaching supabase.from('products').upsert(...)");
 
       const result = await supabase.from('products').upsert(mapProductToDB(finalProduct));
-      const { error: upsertErr } = result;
+      const { error: upsertErr, status } = result;
+      const data = (result as any).data;
 
-      console.log('SUPABASE FULL RESULT status:', result.status, 'statusText:', result.statusText);
+      console.log("SUPABASE RESPONSE", { data, error: upsertErr, status });
       if (upsertErr) {
+        console.log("error?.code", upsertErr?.code);
+        console.log("error?.message", upsertErr?.message);
+        console.log("error?.details", upsertErr?.details);
+        console.log("error?.hint", upsertErr?.hint);
+        console.log("UPSERT RESULT: FAILURE");
         console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(upsertErr, null, 2));
         return res.status(500).json({ 
           error: 'Failed to write product to Supabase',
           supabaseError: upsertErr
         });
       } else {
+        console.log("UPSERT RESULT: SUCCESS");
         console.log('SUPABASE UPSERT SUCCESSFUL. Returned data:', result.data);
       }
     } catch (e: any) {
@@ -1145,7 +1169,24 @@ app.post('/api/orders', async (req, res) => {
           const storeProd = mapProductFromDB(storeProds[0]);
           if (storeProd.stock !== undefined) {
             storeProd.stock = Math.max(0, storeProd.stock - item.quantity);
-            await supabase.from('products').upsert(mapProductToDB(storeProd));
+            console.log("PRODUCT PAYLOAD", storeProd);
+            console.log("UPSERT START", JSON.stringify(mapProductToDB(storeProd), null, 2));
+            console.log("Reaching supabase.from('products').upsert(...)");
+            
+            const result = await supabase.from('products').upsert(mapProductToDB(storeProd));
+            const { error, status } = result;
+            const data = (result as any).data;
+            
+            console.log("SUPABASE RESPONSE", { data, error, status });
+            if (error) {
+              console.log("error?.code", error?.code);
+              console.log("error?.message", error?.message);
+              console.log("error?.details", error?.details);
+              console.log("error?.hint", error?.hint);
+              console.log("UPSERT RESULT: FAILURE");
+            } else {
+              console.log("UPSERT RESULT: SUCCESS");
+            }
           }
         }
       }

@@ -47,6 +47,7 @@ export default function DataMigration({ language = 'AR' }: DataMigrationProps) {
     supabaseResponseOk: boolean;
     tables: Record<string, string>;
     supabaseError?: string;
+    details?: { supabaseUrl?: string };
   } | null>(null);
   const [isCheckingDb, setIsCheckingDb] = useState(false);
 
