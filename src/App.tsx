@@ -23,7 +23,7 @@ import {
   DEFAULT_ORDERS, DEFAULT_DEBTS, DEFAULT_STAFF, DEFAULT_BANNERS,
   getSavedItem, saveItem 
 } from './data/defaultData';
-import { SupabaseServerlessDB, supabase } from './lib/supabase';
+import { SupabaseServerlessDB, supabase, mapProductFromDB } from './lib/supabase';
 import { t } from './lib/translations';
 import { AssistantProvider } from './modules/assistant/providers/AssistantProvider';
 import { FloatingChatButton } from './modules/assistant/components/FloatingChatButton';
@@ -325,7 +325,8 @@ export default function App() {
       }
       if (productsRes && productsRes.ok) {
         const prodData = await productsRes.json();
-        setProducts(prodData);
+        const mappedProds = (prodData || []).map(mapProductFromDB);
+        setProducts(mappedProds);
       }
       if (categoriesRes && categoriesRes.ok) {
         const catData = await categoriesRes.json();
@@ -349,8 +350,9 @@ export default function App() {
       const res = await fetch('/api/products');
       if (res.ok) {
         const prodData = await res.json();
-        setProducts(prodData);
-        SupabaseServerlessDB.setProducts(prodData);
+        const mappedProds = (prodData || []).map(mapProductFromDB);
+        setProducts(mappedProds);
+        SupabaseServerlessDB.setProducts(mappedProds);
         console.log('⚡ [Realtime Sync] Mutated client state after receiving event!');
       }
     } catch (e) {

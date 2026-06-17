@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
@@ -11,6 +12,50 @@ import { ImportService } from './server/importers/sqlite-importer/import-service
 import { createAssistantRouter } from './server/modules/assistant/assistant.routes';
 
 dotenv.config();
+
+const mapProductToDB = (p: any): any => {
+  if (!p) return p;
+  return {
+    id: p.id,
+    name_ar: p.nameAR,
+    name_en: p.nameEN,
+    description_ar: p.descriptionAR,
+    description_en: p.descriptionEN,
+    category: p.category,
+    brand: p.brand,
+    price_yer: Number(p.priceYER || 0),
+    image_url: p.imageUrl,
+    is_available: p.isAvailable !== undefined ? Boolean(p.isAvailable) : true,
+    stock: p.stock !== undefined && p.stock !== null ? Number(p.stock) : null,
+    recharge_amount: p.rechargeAmount || null,
+    organization_id: p.organization_id || null,
+    product_image_url: p.product_image_url || null,
+    is_ai_suggested: p.is_ai_suggested !== undefined ? Boolean(p.is_ai_suggested) : null,
+    ai_suggested_url: p.ai_suggested_url || null,
+  };
+};
+
+const mapProductFromDB = (p: any): any => {
+  if (!p) return p;
+  return {
+    id: p.id,
+    nameAR: p.name_ar || '',
+    nameEN: p.name_en || '',
+    descriptionAR: p.description_ar || '',
+    descriptionEN: p.description_en || '',
+    category: p.category || '',
+    brand: p.brand || '',
+    priceYER: Number(p.price_yer || 0),
+    imageUrl: p.image_url || '',
+    isAvailable: Boolean(p.is_available),
+    stock: p.stock !== undefined && p.stock !== null ? Number(p.stock) : undefined,
+    rechargeAmount: p.recharge_amount || '',
+    product_image_url: p.product_image_url || undefined,
+    is_ai_suggested: p.is_ai_suggested || false,
+    ai_suggested_url: p.ai_suggested_url || undefined,
+    organization_id: p.organization_id || undefined,
+  };
+};
 
 let aiInstance: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
@@ -43,6 +88,19 @@ if (
   } catch (error) {
     console.error('Failed to initialize Supabase client on server-side:', error);
   }
+}
+
+function toUUID(str: string): string {
+  const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+  if (uuidRegex.test(str)) return str;
+  const hash = crypto.createHash('sha1').update(str).digest('hex');
+  return [
+    hash.substring(0, 8),
+    hash.substring(8, 12),
+    '4' + hash.substring(13, 16),
+    'a' + hash.substring(17, 20),
+    hash.substring(20, 32)
+  ].join('-');
 }
 
 const SALT_ROUNDS = 10;
@@ -365,7 +423,17 @@ app.get('/api/config', async (req, res) => {
     try {
       const { data, error } = await supabase.from('store_config').select('*').limit(1).maybeSingle();
       if (!error && data) {
-        storeDatabase.config = { ...storeDatabase.config, ...data };
+        let unpacked = data;
+        if (data.value) {
+          try {
+            unpacked = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+            unpacked.orgId = data.organization_id || unpacked.orgId || 'org-dhibani-vip';
+            unpacked.organization_id = data.organization_id;
+          } catch (e) {
+            console.error('[Supabase Config Decode Error]', e);
+          }
+        }
+        storeDatabase.config = { ...storeDatabase.config, ...unpacked };
       }
     } catch (e) {
       console.error('[Supabase GET Config Error]', e);
@@ -388,7 +456,16 @@ app.post('/api/config', async (req, res) => {
 
   if (supabase) {
     try {
-      await supabase.from('store_config').upsert({ id: 'single-row', ...storeDatabase.config });
+      const orgId = storeDatabase.config.orgId || (storeDatabase.config as any).organization_id || 'org-dhibani-vip';
+      const configValue = { ...storeDatabase.config };
+      delete (configValue as any).id;
+      delete (configValue as any).orgId;
+      delete (configValue as any).organization_id;
+
+      await supabase.from('store_config').upsert({
+        organization_id: toUUID(orgId),
+        value: configValue
+      });
     } catch (e) {
       console.error('[Supabase POST Config Sync Error]', e);
     }
@@ -606,14 +683,15 @@ app.post('/api/sync-products', async (req, res) => {
 
   if (supabase && importedProducts.length > 0) {
     try {
-      const { error } = await supabase.from('products').upsert(importedProducts);
+      const mappedImported = importedProducts.map(mapProductToDB);
+      const { error } = await supabase.from('products').upsert(mappedImported);
       if (error) {
-        console.error('[Supabase Sync Products Error]', error);
+        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(error, null, 2));
       } else {
         console.log('[Supabase Sync Products Success] Successfully upserted products:', importedProducts.length);
       }
     } catch (err) {
-      console.error('[Supabase Sync Products Exception]', err);
+      console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(err, null, 2));
     }
   }
 
@@ -621,12 +699,15 @@ app.post('/api/sync-products', async (req, res) => {
   let allProducts: any[] = [];
   if (supabase) {
     try {
-      const { data } = await supabase.from('products').select('*');
+      const { data, error } = await supabase.from('products').select('*');
+      if (error) {
+        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(error, null, 2));
+      }
       if (data) {
-        allProducts = data;
+        allProducts = data.map(mapProductFromDB);
       }
     } catch (e) {
-      console.error('[Supabase Sync Products Retrieve Error]', e);
+      console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(e, null, 2));
     }
   }
 
@@ -830,11 +911,14 @@ app.get('/api/products', async (req, res) => {
   if (supabase) {
     try {
       const { data, error } = await supabase.from('products').select('*');
+      if (error) {
+        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(error, null, 2));
+      }
       if (!error && data) {
-        return res.json(data);
+        return res.json(data.map(mapProductFromDB));
       }
     } catch (e) {
-      console.error('[Supabase GET Products Error]', e);
+      console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(e, null, 2));
     }
   }
   res.json([]);
@@ -875,31 +959,48 @@ app.post(['/api/products', '/api/products/update'], async (req, res) => {
   if (supabase) {
     try {
       const { data: existing, error: fetchErr } = await supabase.from('products').select('*').eq('id', finalId).maybeSingle();
+      if (fetchErr) {
+        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(fetchErr, null, 2));
+      }
       if (!fetchErr && existing) {
+        const existingMapped = mapProductFromDB(existing);
         finalProduct = {
-          ...existing,
-          nameAR: nameAR !== undefined ? nameAR : existing.nameAR,
-          nameEN: nameEN !== undefined ? nameEN : existing.nameEN,
-          descriptionAR: descriptionAR !== undefined ? descriptionAR : existing.descriptionAR,
-          descriptionEN: descriptionEN !== undefined ? descriptionEN : existing.descriptionEN,
-          priceYER: priceYER !== undefined ? Number(priceYER) : existing.priceYER,
-          isAvailable: isAvailable !== undefined ? Boolean(isAvailable) : existing.isAvailable,
-          stock: stock !== undefined ? Number(stock) : existing.stock,
-          category: category !== undefined ? category : existing.category,
-          imageUrl: imageUrl !== undefined ? imageUrl : existing.imageUrl,
-          brand: brand !== undefined ? brand : existing.brand,
-          rechargeAmount: rechargeAmount !== undefined ? rechargeAmount : existing.rechargeAmount,
-          product_image_url: product_image_url !== undefined ? product_image_url : existing.product_image_url,
-          is_ai_suggested: is_ai_suggested !== undefined ? Boolean(is_ai_suggested) : existing.is_ai_suggested,
-          ai_suggested_url: ai_suggested_url !== undefined ? ai_suggested_url : existing.ai_suggested_url,
+          ...existingMapped,
+          nameAR: nameAR !== undefined ? nameAR : existingMapped.nameAR,
+          nameEN: nameEN !== undefined ? nameEN : existingMapped.nameEN,
+          descriptionAR: descriptionAR !== undefined ? descriptionAR : existingMapped.descriptionAR,
+          descriptionEN: descriptionEN !== undefined ? descriptionEN : existingMapped.descriptionEN,
+          priceYER: priceYER !== undefined ? Number(priceYER) : existingMapped.priceYER,
+          isAvailable: isAvailable !== undefined ? Boolean(isAvailable) : existingMapped.isAvailable,
+          stock: stock !== undefined ? Number(stock) : existingMapped.stock,
+          category: category !== undefined ? category : existingMapped.category,
+          imageUrl: imageUrl !== undefined ? imageUrl : existingMapped.imageUrl,
+          brand: brand !== undefined ? brand : existingMapped.brand,
+          rechargeAmount: rechargeAmount !== undefined ? rechargeAmount : existingMapped.rechargeAmount,
+          product_image_url: product_image_url !== undefined ? product_image_url : existingMapped.product_image_url,
+          is_ai_suggested: is_ai_suggested !== undefined ? Boolean(is_ai_suggested) : existingMapped.is_ai_suggested,
+          ai_suggested_url: ai_suggested_url !== undefined ? ai_suggested_url : existingMapped.ai_suggested_url,
         };
       }
-      const { error: upsertErr } = await supabase.from('products').upsert(finalProduct);
+      console.log('=== [DIAGностиك LOG RUNTIME TRACE] ===');
+      console.log('TABLE NAME: products');
+      console.log('PAYLOAD SENDING:', JSON.stringify(mapProductToDB(finalProduct), null, 2));
+
+      const result = await supabase.from('products').upsert(mapProductToDB(finalProduct));
+      const { error: upsertErr } = result;
+
+      console.log('SUPABASE FULL RESULT status:', result.status, 'statusText:', result.statusText);
       if (upsertErr) {
-        return res.status(500).json({ error: 'Failed to write product to Supabase: ' + upsertErr.message });
+        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(upsertErr, null, 2));
+        return res.status(500).json({ 
+          error: 'Failed to write product to Supabase',
+          supabaseError: upsertErr
+        });
+      } else {
+        console.log('SUPABASE UPSERT SUCCESSFUL. Returned data:', result.data);
       }
     } catch (e: any) {
-      console.error('[Supabase Products Upsert Error]', e);
+      console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(e, null, 2));
       return res.status(500).json({ error: e.message || 'Error occurred while saving product' });
     }
   } else {
@@ -920,16 +1021,20 @@ app.post('/api/products/delete', async (req, res) => {
   let deletedProduct: any = { id };
   if (supabase) {
     try {
-      const { data } = await supabase.from('products').select('*').eq('id', id).maybeSingle();
+      const { data, error: fetchErr } = await supabase.from('products').select('*').eq('id', id).maybeSingle();
+      if (fetchErr) {
+        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(fetchErr, null, 2));
+      }
       if (data) {
-        deletedProduct = data;
+        deletedProduct = mapProductFromDB(data);
       }
       const { error: deleteErr } = await supabase.from('products').delete().eq('id', id);
       if (deleteErr) {
+        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(deleteErr, null, 2));
         return res.status(500).json({ error: 'Failed to delete product from Supabase: ' + deleteErr.message });
       }
     } catch (e: any) {
-      console.error('[Supabase Products Delete Error]', e);
+      console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(e, null, 2));
       return res.status(500).json({ error: e.message || 'Error occurred while deleting product' });
     }
   } else {
@@ -1033,16 +1138,19 @@ app.post('/api/orders', async (req, res) => {
       for (const item of items) {
         const pId = item.product.id;
         const { data: storeProds, error: fetchErr } = await supabase.from('products').select('*').eq('id', pId);
+        if (fetchErr) {
+          console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(fetchErr, null, 2));
+        }
         if (!fetchErr && storeProds && storeProds.length > 0) {
-          const storeProd = storeProds[0];
+          const storeProd = mapProductFromDB(storeProds[0]);
           if (storeProd.stock !== undefined) {
             storeProd.stock = Math.max(0, storeProd.stock - item.quantity);
-            await supabase.from('products').upsert(storeProd);
+            await supabase.from('products').upsert(mapProductToDB(storeProd));
           }
         }
       }
     } catch (err) {
-      console.error('[Supabase Order Stock Resolution Error]', err);
+      console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(err, null, 2));
     }
   }
 
@@ -1316,13 +1424,29 @@ app.post('/api/staff/change-password', async (req, res) => {
       try {
         const { data: configData } = await supabase.from('store_config').select('*').limit(1).maybeSingle();
         if (configData) {
-          let updatedConfig: any = configData;
-          if ('adminPassword' in updatedConfig) delete updatedConfig.adminPassword;
-          if ('cashierPassword' in updatedConfig) delete updatedConfig.cashierPassword;
-          if ('telecomPassword' in updatedConfig) delete updatedConfig.telecomPassword;
+          let unpacked = configData;
+          if (configData.value) {
+            try {
+              unpacked = typeof configData.value === 'string' ? JSON.parse(configData.value) : configData.value;
+            } catch (decErr) {
+              console.error('[Supabase Config Decode Error inside Password Change]', decErr);
+            }
+          }
+          if ('adminPassword' in unpacked) delete unpacked.adminPassword;
+          if ('cashierPassword' in unpacked) delete unpacked.cashierPassword;
+          if ('telecomPassword' in unpacked) delete unpacked.telecomPassword;
           
-          await supabase.from('store_config').upsert(updatedConfig);
-          storeDatabase.config = { ...storeDatabase.config, ...updatedConfig };
+          const orgId = configData.organization_id || unpacked.orgId || 'org-dhibani-vip';
+          const configValue = { ...unpacked };
+          delete (configValue as any).id;
+          delete (configValue as any).orgId;
+          delete (configValue as any).organization_id;
+
+          await supabase.from('store_config').upsert({
+            organization_id: toUUID(orgId),
+            value: configValue
+          });
+          storeDatabase.config = { ...storeDatabase.config, ...unpacked };
         }
       } catch (e) {
         console.error('[Supabase Post Config Sync Error during Password Change]', e);
@@ -1564,11 +1688,14 @@ app.post('/api/gemini/chat', async (req, res) => {
     if (supabase) {
       try {
         const { data, error } = await supabase.from('products').select('*');
+        if (error) {
+          console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(error, null, 2));
+        }
         if (!error && data) {
-          productsList = data;
+          productsList = data.map(mapProductFromDB);
         }
       } catch (e) {
-        console.error('[Supabase Chat Products Fetch Error]', e);
+        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(e, null, 2));
       }
     }
 

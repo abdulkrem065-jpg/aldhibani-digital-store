@@ -1320,15 +1320,26 @@ export default function Dashboard({
 
       // 2. Background POST backup
       try {
-        await fetch('/api/products', {
+        const response = await fetch('/api/products', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': authToken || ''
           },
           body: JSON.stringify(payload)
-        }).catch(() => null);
-      } catch { }
+        });
+        if (!response.ok) {
+          const errData = await response.json();
+          console.error('❌ [Client Save Backup Error] Server returned error response:', errData);
+          if (errData.supabaseError) {
+            console.error('  Supabase Error Payload:', errData.supabaseError);
+          }
+        } else {
+          console.log('✅ [Client Save Backup Success] Server product save endpoint executed successfully.');
+        }
+      } catch (err) {
+        console.error('❌ [Client Save Backup Error] Fetch request failed:', err);
+      }
 
       setIsAddingProduct(false);
       setFullEditingProduct(null);

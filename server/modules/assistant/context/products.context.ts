@@ -1,4 +1,5 @@
 import { Product } from '../../../../src/types';
+import { mapProductFromDB } from '../../../../src/lib/supabase';
 
 export async function getProductsContext(storeDatabase: any, supabase: any, orgId?: string): Promise<string> {
   try {
@@ -11,8 +12,11 @@ export async function getProductsContext(storeDatabase: any, supabase: any, orgI
         query.eq('org_id', orgId);
       }
       const { data, error } = await query;
+      if (error) {
+        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(error, null, 2));
+      }
       if (!error && data) {
-        products = data;
+        products = data.map(mapProductFromDB);
       }
     }
 

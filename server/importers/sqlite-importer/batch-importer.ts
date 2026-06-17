@@ -1,3 +1,22 @@
+const mapProductToDB = (p: any) => ({
+  id: p.id,
+  name_ar: p.nameAR,
+  name_en: p.nameEN,
+  description_ar: p.descriptionAR,
+  description_en: p.descriptionEN,
+  category: p.category,
+  brand: p.brand,
+  price_yer: Number(p.priceYER || 0),
+  image_url: p.imageUrl,
+  is_available: Boolean(p.isAvailable),
+  stock: p.stock !== undefined && p.stock !== null ? Number(p.stock) : null,
+  recharge_amount: p.rechargeAmount || null,
+  organization_id: p.organization_id || null,
+  product_image_url: p.product_image_url || null,
+  is_ai_suggested: p.is_ai_suggested !== undefined ? Boolean(p.is_ai_suggested) : null,
+  ai_suggested_url: p.ai_suggested_url || null,
+});
+
 export interface BatchImportResult {
   tableName: string;
   totalProcessedCount: number;
@@ -53,10 +72,18 @@ export class BatchImporter {
           else if (tableName === 'orders') targetTable = 'orders';
           else if (tableName === 'debts') targetTable = 'debts';
 
-          const { error } = await supabaseClient.from(targetTable).upsert(chunk);
+          let finalChunk = chunk;
+          if (tableName === 'products') {
+            finalChunk = chunk.map(mapProductToDB);
+          }
+
+          const { error } = await supabaseClient.from(targetTable).upsert(finalChunk);
           if (error) {
             hasErrorInBatch = true;
             batchErrorMessage = error.message;
+            if (tableName === 'products') {
+              console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(error, null, 2));
+            }
           }
         } catch (err: any) {
           hasErrorInBatch = true;

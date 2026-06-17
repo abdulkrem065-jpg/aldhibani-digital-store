@@ -10,6 +10,47 @@ import {
   DEFAULT_ORDERS, DEFAULT_DEBTS, DEFAULT_STAFF, DEFAULT_BANNERS 
 } from '../data/defaultData';
 
+export const mapProductToDB = (p: any) => ({
+  id: p.id,
+  name_ar: p.nameAR,
+  name_en: p.nameEN,
+  description_ar: p.descriptionAR,
+  description_en: p.descriptionEN,
+  category: p.category,
+  brand: p.brand,
+  price_yer: Number(p.priceYER || 0),
+  image_url: p.imageUrl,
+  is_available: Boolean(p.isAvailable),
+  stock: p.stock !== undefined && p.stock !== null ? Number(p.stock) : null,
+  recharge_amount: p.rechargeAmount,
+  organization_id: p.organization_id || null,
+  product_image_url: p.product_image_url || null,
+  is_ai_suggested: p.is_ai_suggested !== undefined ? Boolean(p.is_ai_suggested) : null,
+  ai_suggested_url: p.ai_suggested_url || null,
+});
+
+export const mapProductFromDB = (p: any): Product => {
+  if (!p) return p;
+  return {
+    id: p.id,
+    nameAR: p.name_ar || '',
+    nameEN: p.name_en || '',
+    descriptionAR: p.description_ar || '',
+    descriptionEN: p.description_en || '',
+    category: p.category || '',
+    brand: p.brand || '',
+    priceYER: Number(p.price_yer || 0),
+    imageUrl: p.image_url || '',
+    isAvailable: Boolean(p.is_available),
+    stock: p.stock !== undefined && p.stock !== null ? Number(p.stock) : undefined,
+    rechargeAmount: p.recharge_amount || '',
+    product_image_url: p.product_image_url || undefined,
+    is_ai_suggested: p.is_ai_suggested || false,
+    ai_suggested_url: p.ai_suggested_url || undefined,
+    organization_id: p.organization_id || undefined,
+  } as any;
+};
+
 // Retrieve direct environment secrets for Supabase real-time connection
 const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL;
 const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
@@ -137,15 +178,64 @@ export class SupabaseServerlessDB {
   }
 
   // --- Real Supabase Helper operations for background integration ---
+  private static toUUID(str: string): string {
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    if (uuidRegex.test(str)) return str;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash |= 0;
+    }
+    const hex = Math.abs(hash).toString(16).padEnd(8, '0') + 
+                Math.abs(hash * 31).toString(16).padEnd(8, '0') + 
+                Math.abs(hash * 47).toString(16).padEnd(8, '0') + 
+                Math.abs(hash * 63).toString(16).padEnd(8, '0');
+    return [
+      hex.substring(0, 8),
+      hex.substring(8, 12),
+      '4' + hex.substring(13, 16),
+      'a' + hex.substring(17, 20),
+      hex.substring(20, 32)
+    ].join('-');
+  }
+
   private static async asyncUpsert(table: string, payload: any) {
-    if (!supabase) return;
+    if (!supabase) {
+      console.warn(`[Supabase AsyncUpsert] Skip writing to '${table}' because Supabase client is not initialized.`);
+      return;
+    }
+    
+    let finalPayload = payload;
+    if (table === 'store_config') {
+      console.log(`[Supabase AsyncUpsert] Bypassing client-side direct write for table 'store_config'. Updates are handled securely via backend API (/api/config).`);
+      return;
+    } else if (table === 'products') {
+      finalPayload = Array.isArray(payload) ? payload.map(mapProductToDB) : mapProductToDB(payload);
+    }
+    
+    console.log(`=== [Supabase AsyncUpsert PRE-WRITE TRACE] Table: ${table} ===`);
+    console.log(`Payload:`, JSON.stringify(finalPayload, null, 2));
     try {
-      const { error } = await supabase.from(table).upsert(payload);
+      const { status, statusText, error } = await supabase.from(table).upsert(finalPayload);
+      console.log(`[Supabase AsyncUpsert RESULT] Status: ${status} (${statusText})`);
       if (error) {
-        console.warn(`[Supabase Synced Sync Warning] Table or column error writing to '${table}':`, error.message);
+        console.error(`❌ [Supabase AsyncUpsert Error] Write failed for table '${table}':`);
+        if (table === 'products') {
+          console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(error, null, 2));
+        } else {
+          console.error(`  Code:`, error.code);
+          console.error(`  Message:`, error.message);
+          console.error(`  Details:`, error.details);
+          console.error(`  Hint:`, error.hint);
+        }
+      } else {
+        console.log(`✅ [Supabase AsyncUpsert Success] Successfully saved row in table '${table}'.`);
       }
-    } catch (err) {
-      console.warn(`[Supabase Sync Connection Error] Write failed silently for '${table}':`, err);
+    } catch (err: any) {
+      console.error(`❌ [Supabase AsyncUpsert Exception] Panic occurred for table '${table}':`, err);
+      if (table === 'products') {
+        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(err, null, 2));
+      }
     }
   }
 
@@ -165,14 +255,14 @@ export class SupabaseServerlessDB {
     if (!supabase) return false;
     try {
       const [
-        { data: configData },
-        { data: categoriesData },
-        { data: productsData },
-        { data: ordersData },
-        { data: debtsData },
-        { data: staffData },
-        { data: boxesData },
-        { data: workforceData }
+        configRes,
+        categoriesRes,
+        productsRes,
+        ordersRes,
+        debtsRes,
+        staffRes,
+        boxesRes,
+        workforceRes
       ] = await Promise.all([
         supabase.from('store_config').select('*').limit(1).maybeSingle(),
         supabase.from('categories').select('*'),
@@ -184,9 +274,37 @@ export class SupabaseServerlessDB {
         supabase.from('youth_workforce').select('*')
       ]);
 
-      if (configData) this.set('aldhibani_local_config', configData);
+      if (productsRes.error) {
+        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(productsRes.error, null, 2));
+      }
+
+      const configData = configRes.data;
+      const categoriesData = categoriesRes.data;
+      const productsData = productsRes.data;
+      const ordersData = ordersRes.data;
+      const debtsData = debtsRes.data;
+      const staffData = staffRes.data;
+      const boxesData = boxesRes.data;
+      const workforceData = workforceRes.data;
+
+      if (configData) {
+        let actualConfig = configData;
+        if (configData.value) {
+          try {
+            const unpacked = typeof configData.value === 'string' ? JSON.parse(configData.value) : configData.value;
+            actualConfig = {
+              ...unpacked,
+              orgId: configData.organization_id || unpacked.orgId || 'org-dhibani-vip',
+              organization_id: configData.organization_id
+            };
+          } catch (e) {
+            console.warn('[Supabase Config Decode] Config JSON invalid:', e);
+          }
+        }
+        this.set('aldhibani_local_config', actualConfig);
+      }
       if (categoriesData && categoriesData.length > 0) this.set('aldhibani_local_categories', categoriesData);
-      this.clientProducts = productsData || [];
+      this.clientProducts = (productsData || []).map(mapProductFromDB);
       if (ordersData && ordersData.length > 0) this.set('aldhibani_local_orders', ordersData);
       if (debtsData && debtsData.length > 0) this.set('aldhibani_local_debts', debtsData);
       if (staffData && staffData.length > 0) this.set('aldhibani_local_staff', staffData);
@@ -196,6 +314,7 @@ export class SupabaseServerlessDB {
       return true;
     } catch (err) {
       console.warn('[Sync Status] Soft skipped optional initial Supabase master table fetch:', err);
+      console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(err, null, 2));
       return false;
     }
   }

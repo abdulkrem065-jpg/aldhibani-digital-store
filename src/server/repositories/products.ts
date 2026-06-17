@@ -1,4 +1,4 @@
-import { supabase } from "../../lib/supabase";
+import { supabase, mapProductFromDB } from "../../lib/supabase";
 
 export async function getProducts(organization_id: string) {
   if (!supabase) {
@@ -11,8 +11,9 @@ export async function getProducts(organization_id: string) {
     .order("created_at", { ascending: false });
 
   if (error) {
+    console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(error, null, 2));
     throw new Error(error.message);
   }
 
-  return data;
+  return (data || []).map(mapProductFromDB);
 }
