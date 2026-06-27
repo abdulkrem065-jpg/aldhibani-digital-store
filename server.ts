@@ -1,8 +1,19 @@
+// Preserve the real console methods immediately so we can bypass proxy loops during reporting
+(global as any)._originalConsoleError = console.error;
+(global as any)._originalConsoleLog = console.log;
+
+import { aiLogger, createAIErrorReport } from './server/ai-error-processor';
+console.error = aiLogger.error;
+
 import express from 'express';
 import crypto from 'crypto';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import { getGeminiClient } from './server/core/gemini-singleton';
+import { executeAgent } from './server/core/ai-core';
+import './server/core/agents/chat.agent';
+import { executeTransaction } from './server/core/transaction-wrapper';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
@@ -12,6 +23,22 @@ import { ImportService } from './server/importers/sqlite-importer/import-service
 import { createAssistantRouter } from './server/modules/assistant/assistant.routes';
 
 dotenv.config();
+process.env.WRITE_MODE = "server";
+
+import { WriteGateway } from './server/core/write-gateway';
+
+// Node.js process-level error event listeners
+process.on('unhandledRejection', (reason: any) => {
+  const originalConsoleError = (global as any)._originalConsoleError || console.error;
+  originalConsoleError('[PROCESS UNHANDLED REJECTION]', reason);
+  createAIErrorReport(reason instanceof Error ? reason : new Error(String(reason)), 'NodeJS Process unhandledRejection Catchment');
+});
+
+process.on('uncaughtException', (error: any) => {
+  const originalConsoleError = (global as any)._originalConsoleError || console.error;
+  originalConsoleError('[PROCESS UNCAUGHT EXCEPTION]', error);
+  createAIErrorReport(error, 'NodeJS Process uncaughtException Catchment');
+});
 
 const mapProductToDB = (p: any): any => {
   if (!p) return p;
@@ -57,21 +84,8 @@ const mapProductFromDB = (p: any): any => {
   };
 };
 
-let aiInstance: GoogleGenAI | null = null;
-function getGeminiClient(): GoogleGenAI | null {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key || key === 'MY_GEMINI_API_KEY' || key === 'YOUR_GEMINI_API_KEY') {
-    return null;
-  }
-  if (!aiInstance) {
-    aiInstance = new GoogleGenAI({
-      apiKey: key,
-    });
-  }
-  return aiInstance;
-}
-
 // Initialize Supabase Client on the server side
+
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
@@ -201,7 +215,7 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 // In-Memory Database State
-const storeDatabase = {
+export const storeDatabase = {
   config: {
     shopNameAR: 'هايبر ماركت الـطيب الهجين',
     shopNameEN: 'Al- الطيب Luxury Hybrid Hypermarket',
@@ -362,6 +376,22 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (err: any) {
     console.error('Login implementation error:', err);
     return res.status(500).json({ error: 'حدث خطأ غير متوقع أثناء معالجة تسجيل الدخول.' });
+  }
+});
+
+// POST unified AI Debugger error logging endpoint
+app.post('/api/errors/report', async (req, res) => {
+  try {
+    const { error, context } = req.body;
+    if (!error) {
+      return res.status(400).json({ error: 'Missing error object to parse' });
+    }
+    const report = await createAIErrorReport(error, context || 'React Frontend Console Upload');
+    return res.json(report);
+  } catch (err: any) {
+    const originalConsoleError = (global as any)._originalConsoleError || console.error;
+    originalConsoleError('Fatal Exception in POST /api/errors/report:', err);
+    return res.status(500).json({ error: 'Internal server error processing diagnostics report' });
   }
 });
 
@@ -681,29 +711,10 @@ app.post('/api/sync-products', async (req, res) => {
     ];
   }
 
-  if (supabase && importedProducts.length > 0) {
+  if (importedProducts.length > 0) {
     try {
-      const mappedImported = importedProducts.map(mapProductToDB);
-      console.log("PRODUCT PAYLOAD", importedProducts);
-      console.log("UPSERT START", JSON.stringify(mappedImported, null, 2));
-      console.log("Reaching supabase.from('products').upsert(...)");
-      
-      const result = await supabase.from('products').upsert(mappedImported);
-      const { status, error } = result;
-      const data = (result as any).data;
-      
-      console.log("SUPABASE RESPONSE", { data, error, status });
-      if (error) {
-        console.log("error?.code", error?.code);
-        console.log("error?.message", error?.message);
-        console.log("error?.details", error?.details);
-        console.log("error?.hint", error?.hint);
-        console.log("UPSERT RESULT: FAILURE");
-        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(error, null, 2));
-      } else {
-        console.log("UPSERT RESULT: SUCCESS");
-        console.log('[Supabase Sync Products Success] Successfully upserted products:', importedProducts.length);
-      }
+      await WriteGateway.upsertProductsBatch(supabase, importedProducts);
+      console.log('[Supabase Sync Products Success] Successfully upserted products:', importedProducts.length);
     } catch (err: any) {
       console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(err, null, 2));
     }
@@ -1000,32 +1011,17 @@ app.post(['/api/products', '/api/products/update'], async (req, res) => {
       console.log('=== [DIAGностиك LOG RUNTIME TRACE] ===');
       console.log('TABLE NAME: products');
       console.log("PRODUCT PAYLOAD", finalProduct);
-      console.log("UPSERT START", JSON.stringify(mapProductToDB(finalProduct), null, 2));
-      console.log("Reaching supabase.from('products').upsert(...)");
 
-      const result = await supabase.from('products').upsert(mapProductToDB(finalProduct));
-      const { error: upsertErr, status } = result;
-      const data = (result as any).data;
-
-      console.log("SUPABASE RESPONSE", { data, error: upsertErr, status });
-      if (upsertErr) {
-        console.log("error?.code", upsertErr?.code);
-        console.log("error?.message", upsertErr?.message);
-        console.log("error?.details", upsertErr?.details);
-        console.log("error?.hint", upsertErr?.hint);
-        console.log("UPSERT RESULT: FAILURE");
-        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(upsertErr, null, 2));
-        return res.status(500).json({ 
-          error: 'Failed to write product to Supabase',
-          supabaseError: upsertErr
-        });
-      } else {
-        console.log("UPSERT RESULT: SUCCESS");
-        console.log('SUPABASE UPSERT SUCCESSFUL. Returned data:', result.data);
-      }
+      const dbRecord = await WriteGateway.upsertProduct(supabase, finalProduct, storeDatabase);
+      console.log("UPSERT RESULT: SUCCESS", dbRecord);
     } catch (e: any) {
-      console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(e, null, 2));
-      return res.status(500).json({ error: e.message || 'Error occurred while saving product' });
+      console.error('SUPABASE PRODUCTS ERROR', e);
+      return res.status(500).json({ 
+        error: e.message || 'Error occurred while saving product',
+        explanation: e.explanation || null,
+        rootCause: e.rootCause || null,
+        patch: e.patch || null
+      });
     }
   } else {
     return res.status(500).json({ error: 'Supabase is not initialized' });
@@ -1052,14 +1048,15 @@ app.post('/api/products/delete', async (req, res) => {
       if (data) {
         deletedProduct = mapProductFromDB(data);
       }
-      const { error: deleteErr } = await supabase.from('products').delete().eq('id', id);
-      if (deleteErr) {
-        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(deleteErr, null, 2));
-        return res.status(500).json({ error: 'Failed to delete product from Supabase: ' + deleteErr.message });
-      }
+      await WriteGateway.deleteProduct(supabase, id, storeDatabase);
     } catch (e: any) {
-      console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(e, null, 2));
-      return res.status(500).json({ error: e.message || 'Error occurred while deleting product' });
+      console.error('SUPABASE PRODUCTS ERROR', e);
+      return res.status(500).json({ 
+        error: e.message || 'Error occurred while deleting product',
+        explanation: e.explanation || null,
+        rootCause: e.rootCause || null,
+        patch: e.patch || null
+      });
     }
   } else {
     return res.status(500).json({ error: 'Supabase is not initialized' });
@@ -1077,12 +1074,10 @@ app.post('/api/clear-all', async (req, res) => {
   const { target } = req.body; // 'PRODUCTS' | 'CATEGORIES' | 'ORDERS' | 'DEBTS' | 'ALL'
 
   if (target === 'PRODUCTS' || target === 'ALL') {
-    if (supabase) {
-      try {
-        await supabase.from('products').delete().neq('id', 'keep-dummy');
-      } catch (e) {
-        console.error('[Supabase Clear Products Error]', e);
-      }
+    try {
+      await WriteGateway.clearAllProducts(supabase, storeDatabase);
+    } catch (e) {
+      console.error('[Supabase Clear Products Error]', e);
     }
   }
   if (target === 'CATEGORIES' || target === 'ALL') {
@@ -1153,59 +1148,43 @@ app.post('/api/orders', async (req, res) => {
     customerPhone: customerPhone || 'دون هاتف',
     notes: notes || '',
     paymentMethod: paymentMethod || 'كاش / نقداً',
-    cashierId: cashierId || 'admin' // default to active creator cashier
+    cashierId: cashierId || 'admin'
   };
 
-  // Adjust inventories for physical products in the backend!
-  if (supabase) {
-    try {
-      for (const item of items) {
-        const pId = item.product.id;
-        const { data: storeProds, error: fetchErr } = await supabase.from('products').select('*').eq('id', pId);
-        if (fetchErr) {
-          console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(fetchErr, null, 2));
-        }
-        if (!fetchErr && storeProds && storeProds.length > 0) {
-          const storeProd = mapProductFromDB(storeProds[0]);
-          if (storeProd.stock !== undefined) {
-            storeProd.stock = Math.max(0, storeProd.stock - item.quantity);
-            console.log("PRODUCT PAYLOAD", storeProd);
-            console.log("UPSERT START", JSON.stringify(mapProductToDB(storeProd), null, 2));
-            console.log("Reaching supabase.from('products').upsert(...)");
-            
-            const result = await supabase.from('products').upsert(mapProductToDB(storeProd));
-            const { error, status } = result;
-            const data = (result as any).data;
-            
-            console.log("SUPABASE RESPONSE", { data, error, status });
-            if (error) {
-              console.log("error?.code", error?.code);
-              console.log("error?.message", error?.message);
-              console.log("error?.details", error?.details);
-              console.log("error?.hint", error?.hint);
-              console.log("UPSERT RESULT: FAILURE");
-            } else {
-              console.log("UPSERT RESULT: SUCCESS");
+  try {
+    if (supabase) {
+      await executeTransaction(async (client) => {
+        // Adjust inventories for physical products in the transaction
+        for (const item of items) {
+          const pId = item.product.id;
+          const { data: storeProds, error: fetchErr } = await client.from('products').select('*').eq('id', pId);
+          if (fetchErr) {
+            console.error('SUPABASE PRODUCTS TRANSACTION ERROR', JSON.stringify(fetchErr, null, 2));
+            throw fetchErr;
+          }
+          if (storeProds && storeProds.length > 0) {
+            const storeProd = mapProductFromDB(storeProds[0]);
+            if (storeProd.stock !== undefined) {
+              const newStock = Math.max(0, storeProd.stock - item.quantity);
+              // Update stock inside transaction client
+              const { error: updateErr } = await client.from('products').update({ stock: newStock }).eq('id', pId);
+              if (updateErr) throw updateErr;
             }
           }
         }
-      }
-    } catch (err) {
-      console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(err, null, 2));
+        // Upsert order in the transaction
+        const { error: orderErr } = await client.from('orders').upsert(newOrder);
+        if (orderErr) throw orderErr;
+      });
     }
+
+    storeDatabase.orders.unshift(newOrder); // Add to local in-memory trace list
+    res.json({ success: true, order: newOrder });
+
+  } catch (err: any) {
+    console.error('[Transaction Order Execution Error]', err);
+    res.status(500).json({ error: 'فشل معالجة الطلب كمعاملة آمنة.', details: err.message || String(err) });
   }
-
-  storeDatabase.orders.unshift(newOrder); // Add to beginning of track list
-
-  if (supabase) {
-    try {
-      await supabase.from('orders').upsert(newOrder);
-    } catch (e) {
-      console.error('[Supabase Orders Upsert Error]', e);
-    }
-  }
-
-  res.json({ success: true, order: newOrder });
 });
 
 // UPDATE order status (Admin/Staff)
@@ -1594,14 +1573,11 @@ app.post('/api/staff/reset-password', async (req, res) => {
       await insertAuditLog(
         'RESET_STAFF_PASSWORD',
         'ADMIN',
-        { staffId, username: staff.username, source: isCloudUser ? 'SUPABASE_CLOUD' : 'FALLBACK_LOCAL_DB' }
+        { staffId, username: staff.username, source: isCloudUser ? 'SUPABASE' : 'IN_MEMORY' }
       );
     }
 
-    return res.json({
-      success: true,
-      message: 'تم إعادة تعيين كلمة مرور الموظف بنجاح في النظام.'
-    });
+    return res.json({ success: true, message: 'تمت إعادة تعيين كلمة المرور بنجاح.' });
 
   } catch (err: any) {
     console.error('[Reset Password API Error]', err);
@@ -1609,51 +1585,15 @@ app.post('/api/staff/reset-password', async (req, res) => {
   }
 });
 
-// AI PRODUCT IMAGE SUGGESTION & GENERATION ENDPOINT
+// GET IMAGE SUGGESTION VIA GEMINI IMAGEN
 app.post('/api/gemini/suggest-image', async (req, res) => {
-  const { nameAR, nameEN, category, descriptionAR, descriptionEN } = req.body;
-  if (!nameAR && !nameEN) {
-    return res.status(400).json({ error: 'الاسم المراد تحليله حقل إجباري!' });
-  }
-
   try {
+    const { nameEN, nameAR, category, descriptionAR, descriptionEN } = req.body;
+    const searchKeyword = nameEN || nameAR || 'product';
+    const imagePrompt = `A high quality, clear, commercial product isolated background photograph of direct retail item: ${searchKeyword} (Category: ${category || 'general'}, description: ${descriptionEN || descriptionAR || ''})`;
+
     const aiInstance = getGeminiClient();
-    let searchKeyword = 'product';
-    let imagePrompt = `A high quality professional product shot of ${nameEN || nameAR}, clean studio lighting, isolated on solid background`;
-    
     if (aiInstance) {
-      try {
-        // Fetch keyword and prompt from Gemini 1.5-flash
-        const analyzeResponse = await aiInstance.models.generateContent({
-          model: 'gemini-1.5-flash',
-          contents: `You are an AI product photographer. Analyze this item:
-Name (Arabic): ${nameAR || ''}
-Name (English): ${nameEN || ''}
-Description (Arabic): ${descriptionAR || ''}
-Description (English): ${descriptionEN || ''}
-Category: ${category || ''}
-
-Provide a JSON object containing:
-1. "searchKeyword": a clean, single-word or short English keyword/phrase (e.g. 'headphone', 'simcard', 'honey', 'laptop') suitable for looking up stock photos on high-quality CDNs.
-2. "imagePrompt": a detailed, professional photography prompt (e.g. "Studio photo of a high-end luxury smartphone on a dark slate background, octane render, photorealistic") for an AI image generator.
-
-Ensure your response is valid JSON only. Do not output markdown codeblocks around it, just raw JSON.`,
-          config: {
-            responseMimeType: 'application/json'
-          }
-        });
-
-        const textResponse = analyzeResponse.text?.trim() || '{}';
-        // Clean markdown JSON boundaries if any
-        const cleanedJson = textResponse.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-        const parsed = JSON.parse(cleanedJson);
-        if (parsed.searchKeyword) searchKeyword = parsed.searchKeyword;
-        if (parsed.imagePrompt) imagePrompt = parsed.imagePrompt;
-      } catch (err) {
-        console.warn('Gemini details analysis failed, using fallback:', err);
-      }
-
-      // Try generating real image via gemini-2.5-flash-image
       try {
         const imageGenResponse = await aiInstance.models.generateContent({
           model: 'gemini-2.5-flash-image',
@@ -1719,150 +1659,26 @@ Ensure your response is valid JSON only. Do not output markdown codeblocks aroun
   }
 });
 
-// AI CHATBOT AGENT ENDPOINT WITH ACCESS TO PRODUCTS AND ORDER STRUCTURE
+// AI CHATBOT AGENT ENDPOINT WITH CENTRAL ORCHESTRATOR
 app.post('/api/gemini/chat', async (req, res) => {
-  const { prompt, history, language } = req.body;
-  const currentLang = language || 'AR';
+    try {
+        const { prompt, message, language, userId, conversationId } = req.body;
+        const msgToSend = message || prompt;
 
-  try {
-    let productsList: any[] = [];
-    if (supabase) {
-      try {
-        const { data, error } = await supabase.from('products').select('*');
-        if (error) {
-          console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(error, null, 2));
+        if (!msgToSend) {
+            return res.status(400).json({ success: false, error: "محتوى الرسالة مطلوب" });
         }
-        if (!error && data) {
-          productsList = data.map(mapProductFromDB);
-        }
-      } catch (e) {
-        console.error('SUPABASE PRODUCTS ERROR', JSON.stringify(e, null, 2));
-      }
+
+        const result = await executeAgent('chat', { message: msgToSend, userId, conversationId, language }, userId);
+        return res.json({ success: true, ...result });
+
+    } catch (error: any) {
+        console.error("❌ [API_GATEWAY_ERROR]:", error);
+        return res.status(500).json({ 
+            success: false, 
+            error: "حدث خطأ أثناء معالجة الطلب برمجياً، تم توثيقه في سجل الرقابة." 
+        });
     }
-
-    const aiInstance = getGeminiClient();
-    if (!aiInstance) {
-      // Elegant localized AI mockup if no system secret was provided
-      console.warn("GEMINI_API_KEY NOT DEFINED; RUNNING INTELLIGENT RULE-BASED MATCHING SIMULATION");
-      
-      const lowerPrompt = prompt.toLowerCase();
-      let reply = '';
-      let mockAction = null;
-
-      if (currentLang === 'AR') {
-        if (lowerPrompt.includes('رصيد') || lowerPrompt.includes('يمن موبايل') || lowerPrompt.includes('شحن')) {
-          reply = `أهلاً بك! لدينا شحن رصيد وباقات مستقرة لكل شبكات اليمن المحمية: 
-- يمن موبايل (500 ريال و 2000 ريال مزايا).
-- سبأفون (باقة 500 ريال).
-- يو YOU وفور جي (1000 ريال). 
-يمكنك النقر مباشرة على قسم الخدمات الرقمية وتعبئة رقمك فوراً!`;
-        } else if (lowerPrompt.includes('ببجي') || lowerPrompt.includes('جواهر') || lowerPrompt.includes('ألعاب')) {
-          reply = `نوفر شحن كروت ألعاب إلكترونية سريعة بالآيدي! شدات ببجي (660 UC بـ 3400 ريال) وجواهر فري فاير (210 جوهرة بـ 1540 ريال). جرب الشحن الآن برقم الآي دي الخاص بك في بوابتنا!`;
-        } else if (lowerPrompt.includes('عسل') || lowerPrompt.includes('تموين') || lowerPrompt.includes('غذاء')) {
-          reply = `يتوفر لدينا عسل سدر يمني ملكي فاخر من حضرموت بـ 15,000 ريال للكيلو، وشاي السعيد النقي بـ 1200 ريال وحليب الهناء مجفف 1.8 كجم بـ 8500 ريال. جميعها منتجات ملموسة بجودة عالية!`;
-        } else if (lowerPrompt.includes('واي فاي') || lowerPrompt.includes('شحن انكر') || lowerPrompt.includes('جهاز')) {
-          reply = `قسم الإلكترونيات يوفر مودم واي فاي يمن موبايل 4G محمول بسعر 24,000 ريال وخازن شحن أنكر 20,000 ميللي أمبير بسعر 13,500 ريال لتفادي انقطاع الكهرباء تماماً.`;
-        } else if (lowerPrompt.includes('إضافة') || lowerPrompt.includes('اشتري') || lowerPrompt.includes('أضف')) {
-          // Identify product to add
-          let matchedProd = productsList.find(p => lowerPrompt.includes(p.nameAR.toLowerCase()) || p.nameAR.split(' ').some((word: string) => word.length > 3 && lowerPrompt.includes(word)));
-          if (matchedProd) {
-            reply = `بالتأكيد! قمت بمطابقة طلبك: "${matchedProd.nameAR}". تم إرسال أمر لإضافته مباشرة إلى سلة التسوق الخاصة بك!`;
-            mockAction = { type: 'ADD_TO_CART', product: matchedProd };
-          } else {
-            reply = `لقد سمعت طلب إضافة منتج، يرجى كتابة اسم المنتج بوضوح (مثل عسل يمني أو باقة يمن موبايل) لأضيفه لك فوراً!`;
-          }
-        } else {
-          reply = `مرحباً بك في الذكاء الاصطناعي التفاعلي المدمج للهايبر ماركت الهجين! يمكنني مساعدتك في:
-1. البحث الذكي عن باقات الاتصالات والرصيد أو الألعاب.
-2. عرض أسعار العسل والمواد الغذائية والإلكترونيات وتحويلها للعملات (الدولار والريال السعودي).
-3. إطاعة الأوامر المباشرة مثل "أضف عسل سدر للسلة" وسأقوم بإدراجه لسلتك تلقائياً!`;
-        }
-      } else {
-        // English simulation
-        if (lowerPrompt.includes('recharge') || lowerPrompt.includes('mobile') || lowerPrompt.includes('yemen')) {
-          reply = `Welcome! We offer high-availability recharges for all local networks: Yemen Mobile (500/2000 YER), Sabafon (500 YER), and YOU 4G (1000 YER). Just head over to the Digital Services tab.`;
-        } else if (lowerPrompt.includes('game') || lowerPrompt.includes('pubg') || lowerPrompt.includes('diamond')) {
-          reply = `We maintain secure gaming card APIs like PUBG Mobile (660 UC - 3400 YER) and Free Fire (210 Diamonds - 1540 YER). You can inject your Player ID directly into the checkouts.`;
-        } else if (lowerPrompt.includes('honey') || lowerPrompt.includes('grocery') || lowerPrompt.includes('tea')) {
-          reply = `We showcase Royal Yemeni Sidr Honey Premium (1kg) at 15000 YER, Al-Saeed Tea at 1200 YER, and Al-Hana Milk Powder at 8500 YER under the Groceries section.`;
-        } else if (lowerPrompt.includes('add') || lowerPrompt.includes('buy') || lowerPrompt.includes('cart')) {
-          let matchedProd = productsList.find(p => lowerPrompt.includes(p.nameEN.toLowerCase()) || p.nameEN.split(' ').some((word: string) => word.length > 3 && lowerPrompt.includes(word)));
-          if (matchedProd) {
-            reply = `Understood! I matched your request with "${matchedProd.nameEN}". I am adding this item to your cart now.`;
-            mockAction = { type: 'ADD_TO_CART', product: matchedProd };
-          } else {
-            reply = `I can add items to your shopping cart. Please say 'add honey' or 'add pubg cards'.`;
-          }
-        } else {
-          reply = `Greetings from hypermarket smart AI! Ask me about cellular recharge options, electronic game tokens, honey groceries, or simply say 'add 4G router to my cart' to instantly update your cart!`;
-        }
-      }
-
-      return res.json({ text: reply, action: mockAction, isOffline: true });
-    }
-
-    // Prepare system instructions with full catalog schema and context
-    const catalogString = productsList.map(p => 
-      `- ID: "${p.id}", Name(AR): "${p.nameAR}", Name(EN): "${p.nameEN}", Price: ${p.priceYER} YER, Category: "${p.category}", Brand: "${p.brand || 'None'}", Stock: ${p.stock || 'Unlimited'}`
-    ).join('\n');
-
-    const systemPromptMessage = `أنت المساعد الذكي الفاخر والمستشار التسوقي الشخصي لـ "هايبر ماركت الطيب الهجين".
-هذا المتجر يجمع بين خدمات الاتصالات الرقمية اليمنية (يمن موبايل، سبأفون، يو YOU، واي) وشحن الألعاب الإلكترونية الفوري (ببجي ويوسي PUBG UC، جواهر فري فاير Free Fire Diamonds)، بالإضافة إلى السلع الملموسة عالية الجودة كالعسل الحضرمي والتموين والأجهزة الذكية.
-
-هنا قائمة كتالوج المنتجات الفعلية المتوفرة للبيع بالريال اليمني الموثق:
-${catalogString}
-
-إرشادات هامة للاستجابة:
-1. يرجى التواصل باللغة التي يبادر بها العميل (العربية أو الإنجليزية ${currentLang}).
-2. إذا طلب العميل منتجاً معيناً، يمكنك الإجابة عن سعره بالريال اليمني، وتحويله للدولار (بصرف ${storeDatabase.config.exchangeRateUSD}) والريال السعودي (بصرف ${storeDatabase.config.exchangeRateSAR}) عند الطلب لمساعدته على تعدد العملات.
-3. ميزة "الأوامر الذكية": إذا طلب العميل شراء أو إضافة منتج إلى سلة المشتريات (مثال: "أضف عسل يمني ملكي للسلة"، "أريد شراء باقة يمن موبايل فوري"، "add pubg to my cart")، يجب أن تحلل الجملة وتصيغ ردك لتطابق صنفاً من الكتالوج وتحزم استجابة JSON تحتوي على معلومات الصنف ومحرك التحويل الإداري.
-4. حافظ على نبرة فخمة، مهذبة وودودة جداً تليق بمرتبة المتجر الرفيعة.
-5. لا تقم بتخيل أو اختراع باقات غير موجودة في الكتالوج الحالي أعلاه لضمان المصداقية والأمان.
-
-صيغة الإخراج للغة البرمجية:
-إذا كانت هناك نية لإضافة منتج לסلة التسوق، قم بتضمين وسم في نهاية إجابتك أو بطريقة كشف مخصصة كـ JSON:
-[ACTION: {"type": "ADD_TO_CART", "productId": "MATCHED_PRODUCT_ID"}] 
-تأكد من كتابة اسم المنتج ومعرفه الصحيح من كتالوج الأمان.`;
-
-    // Talk to gemini-1.5-flash with proper SDK calling form
-    const response = await aiInstance.models.generateContent({
-      model: 'gemini-1.5-flash',
-      contents: prompt,
-      config: {
-        systemInstruction: systemPromptMessage,
-        temperature: 0.7,
-      }
-    });
-
-    const aiText = response.text || '';
-    
-    // Parse action regex out of text if generated by Gemini
-    let clientAction = null;
-    const actionRegex = /\[ACTION:\s*({.*?})\]/;
-    const match = aiText.match(actionRegex);
-    let cleanText = aiText;
-    
-    if (match && match[1]) {
-      try {
-        const parsedAction = JSON.parse(match[1]);
-        if (parsedAction.productId) {
-          const prod = productsList.find(p => p.id === parsedAction.productId);
-          if (prod) {
-            clientAction = { type: 'ADD_TO_CART', product: prod };
-          }
-        }
-        cleanText = aiText.replace(actionRegex, '').trim();
-      } catch (e) {
-        console.error("Action parse err: ", e);
-      }
-    }
-
-    res.json({ text: cleanText, action: clientAction });
-
-  } catch (error: any) {
-    console.error("Server API Gemini Error: ", error);
-    res.status(500).json({ error: error.message || 'خطأ أثناء الاتصال بمحرك الذكاء الاصطناعي.' });
-  }
 });
 
 // ----------------------------------------------------
@@ -2181,6 +1997,33 @@ app.get('/api/import/report/:jobId', async (req, res) => {
 
 // START EXPRESS AND VITE MIDDLEWARE INTERPOLATION
 async function startServer() {
+  app.use('/api/assistant', createAssistantRouter(storeDatabase, supabase));
+
+  // Global Express error handler middleware
+  app.use((err: any, req: any, res: any, next: any) => {
+    const originalConsoleError = (global as any)._originalConsoleError || console.error;
+    originalConsoleError('[Server Global Error Handler Intercepted Exception]:', err);
+    
+    createAIErrorReport(err, `Express Global Error Handler Catchment: ${req.method} ${req.path}`)
+      .then((analysis) => {
+        if (!res.headersSent) {
+          res.status(500).json({
+            error: 'Internal Server Error. Our backend AI reliability system has intervened.',
+            message: err?.message || String(err),
+            ai_analysis: analysis
+          });
+        }
+      })
+      .catch((handlerErr) => {
+        if (!res.headersSent) {
+          res.status(500).json({ 
+            error: 'Internal Server Error in error processing pipeline', 
+            message: err?.message || String(err)
+          });
+        }
+      });
+  });
+
   // Vite integrated middleware setup
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

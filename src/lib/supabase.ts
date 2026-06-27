@@ -52,8 +52,17 @@ export const mapProductFromDB = (p: any): Product => {
 };
 
 // Retrieve direct environment secrets for Supabase real-time connection
-const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL;
-const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = 
+  (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) || 
+  (typeof process !== 'undefined' && process.env?.SUPABASE_URL) || 
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_URL) || 
+  '';
+
+const supabaseAnonKey = 
+  (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_ANON_KEY) || 
+  (typeof process !== 'undefined' && process.env?.SUPABASE_ANON_KEY) || 
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_ANON_KEY) || 
+  '';
 
 export let supabase: SupabaseClient | null = null;
 
@@ -210,7 +219,8 @@ export class SupabaseServerlessDB {
       console.log(`[Supabase AsyncUpsert] Bypassing client-side direct write for table 'store_config'. Updates are handled securely via backend API (/api/config).`);
       return;
     } else if (table === 'products') {
-      finalPayload = Array.isArray(payload) ? payload.map(mapProductToDB) : mapProductToDB(payload);
+      console.warn("❌ [Supabase AsyncUpsert Blocked] Direct client-side write to 'products' requested but is strictly BLOCKED by protocol.");
+      return;
     }
     
     console.log(`=== [Supabase AsyncUpsert PRE-WRITE TRACE] Table: ${table} ===`);
@@ -263,6 +273,10 @@ export class SupabaseServerlessDB {
 
   private static async asyncDelete(table: string, id: string) {
     if (!supabase) return;
+    if (table === 'products') {
+      console.warn("❌ [Supabase AsyncDelete Blocked] Direct client-side delete of 'products' requested but is strictly BLOCKED by protocol.");
+      return;
+    }
     try {
       const { error } = await supabase.from(table).delete().eq('id', id);
       if (error) {
@@ -437,7 +451,23 @@ export class SupabaseServerlessDB {
       list.push(prod);
     }
     this.clientProducts = list;
-    this.asyncUpsert('products', prod);
+    
+    // Call HTTP API REST endpoint securely instead of client-side direct Supabase write
+    fetch('/api/products', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'STABLE_LUXURY_HYPERMARKET_KEY_TOKEN_2026'
+      },
+      body: JSON.stringify(prod)
+    }).then(res => {
+      if (!res.ok) {
+        console.error('Failed to save product via HTTP API');
+      }
+    }).catch(err => {
+      console.error('Error saving product via API:', err);
+    });
+
     this.broadcastHardRefresh();
     return list;
   }
@@ -445,18 +475,47 @@ export class SupabaseServerlessDB {
   static deleteProduct(id: string): Product[] {
     const list = this.getProducts().filter(p => p.id !== id);
     this.clientProducts = list;
-    this.asyncDelete('products', id);
+
+    // Call HTTP API REST endpoint securely instead of client-side direct Supabase delete
+    fetch('/api/products/delete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'STABLE_LUXURY_HYPERMARKET_KEY_TOKEN_2026'
+      },
+      body: JSON.stringify({ id })
+    }).then(res => {
+      if (!res.ok) {
+        console.error('Failed to delete product via HTTP API');
+      }
+    }).catch(err => {
+      console.error('Error deleting product via API:', err);
+    });
+
     this.broadcastHardRefresh();
     return list;
   }
 
   static clearAllProducts(): void {
     this.clientProducts = [];
-    if (supabase) {
-      supabase.from('products').delete().neq('id', 'keep-dummy').then(() => {
+    
+    // Call HTTP API REST endpoint securely instead of client-side direct Supabase clear
+    fetch('/api/clear-all', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'STABLE_LUXURY_HYPERMARKET_KEY_TOKEN_2026'
+      },
+      body: JSON.stringify({ target: 'PRODUCTS' })
+    }).then(res => {
+      if (res.ok) {
         this.broadcastHardRefresh();
-      });
-    }
+      } else {
+        console.error('Failed to clear products via HTTP API');
+      }
+    }).catch(err => {
+      console.error('Error clearing products via API:', err);
+    });
   }
 
   static clearAllCategories(): void {

@@ -1,26 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
-
-let aiInstance: GoogleGenAI | null = null;
-
-function getGeminiClient(): GoogleGenAI | null {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key || key === 'MY_GEMINI_API_KEY' || key === 'YOUR_GEMINI_API_KEY') {
-    return null; 
-  }
-  if (!aiInstance) {
-    aiInstance = new GoogleGenAI({
-      apiKey: key,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
-    });
-  }
-  return aiInstance;
-}
+import { getGeminiClient } from '../../core/gemini-singleton';
 
 export class AssistantGeminiBridge {
+
   /**
    * Generates text response using Gemini or local intelligence simulation fallback
    */

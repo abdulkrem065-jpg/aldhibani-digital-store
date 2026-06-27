@@ -1,3 +1,5 @@
+import { WriteGateway } from '../../core/write-gateway';
+
 const mapProductToDB = (p: any) => ({
   id: p.id,
   name_ar: p.nameAR,
@@ -57,6 +59,25 @@ export class BatchImporter {
 
     for (let index = 0; index < chunks.length; index++) {
       const chunk = chunks[index];
+      
+      // Divert product batch imports completely to WriteGateway
+      if (tableName === 'products') {
+        try {
+          await WriteGateway.upsertProductsBatch(supabaseClient, chunk, storeDatabase);
+          result.insertedCount += chunk.length;
+        } catch (err: any) {
+          console.error(`[BatchImporter] Products write gateway batch failed:`, err);
+          result.failedCount += chunk.length;
+          chunk.forEach(rec => {
+            result.errors.push({
+              recordId: rec.id || rec.legacy_id || 'unidentified-id',
+              message: err.message || 'Write gateway batch error'
+            });
+          });
+        }
+        continue;
+      }
+
       let hasErrorInBatch = false;
       let batchErrorMessage = '';
 

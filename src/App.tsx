@@ -41,6 +41,7 @@ export default function App() {
     return (localStorage.getItem('aldhibani_view') as any) || 'GATEWAY';
   });
   const [showAssistantPage, setShowAssistantPage] = useState<boolean>(false);
+  const isAssistantActive = showAssistantPage;
   const [currentUser, setCurrentUser] = useState<StaffUser | null>(() => {
     const saved = localStorage.getItem('aldhibani_user');
     try {
@@ -931,7 +932,8 @@ export default function App() {
           </div>
 
           {/* 5️⃣ AI FLOATING ASSISTANT DISPATCHER BUTTON & DRAWER (قسم AI الشامل والتحدث الصوتي) */}
-          <div className="fixed bottom-6 left-6 z-50">
+          {!isAssistantActive && (
+            <div className="fixed bottom-6 left-6 z-50">
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -1064,6 +1066,7 @@ export default function App() {
               )}
             </AnimatePresence>
           </div>
+          )}
 
           {/* Core Shopping Cart drawer */}
           <ShoppingCartDrawer
@@ -1563,10 +1566,12 @@ export default function App() {
           </AnimatePresence>
 
           {/* Floating Smart Assistant Action Widget */}
-          <FloatingChatButton 
-            orgId={config.orgId} 
-            userRole={currentUser?.role || 'GUEST'} 
-          />
+          {!isAssistantActive && (
+            <FloatingChatButton 
+              orgId={config.orgId} 
+              userRole={currentUser?.role || 'GUEST'} 
+            />
+          )}
 
         </div>
       )}

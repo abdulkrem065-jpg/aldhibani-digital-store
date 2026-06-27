@@ -6,6 +6,7 @@ import { OrganizationInjector } from '../../../server/importers/sqlite-importer/
 import { InvoiceJsonConverter } from '../../../server/importers/sqlite-importer/invoice-json-converter';
 import { ImportValidator } from '../../../server/importers/sqlite-importer/import-validator';
 import { BatchImporter } from '../../../server/importers/sqlite-importer/batch-importer';
+import { WriteGateway } from '../../../server/core/write-gateway';
 import { ImportRepository, DBImportJob } from '../repositories/import.repository';
 
 export class ImportService {
@@ -290,11 +291,10 @@ export class ImportService {
 
       // 3. Roll back products
       if (inserted.products && inserted.products.length > 0) {
-        if (supabaseClient) {
-          await supabaseClient.from('products').delete().in('id', inserted.products);
-        }
-        if (storeDatabase && storeDatabase.products) {
-          storeDatabase.products = storeDatabase.products.filter((p: any) => !inserted.products.includes(p.id));
+        try {
+          await WriteGateway.deleteProductsBatch(supabaseClient, inserted.products, storeDatabase);
+        } catch (err) {
+          console.error('[Import rollback products error]', err);
         }
       }
 
