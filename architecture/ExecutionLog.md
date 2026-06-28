@@ -23,7 +23,15 @@
   - `SystemRegistry.md` (سجل المعايير والترقيم القياسي الفيدرالي لـ V5)
   - `ADR/0001-v5-execution-roadmap.md` (خارطة الطريق التنفيذية وعقيدة الحوكمة)
   - `ADR/ADR-002-RBAC-Outside-Database.md` (إدارة نظام الـ RBAC خارج الـ RLS في الباكيند)
+  - `compliance/ArchitectureCompliance.md` (نظام فحص الامتثال للدستور الأعلى)
+  - `compliance/ArchitectureCompliance.sql` (مفسر ومحرك فحص الامتثال)
 * **وثيقة التراجع:** لا يوجد تراجع هندسي مطلوب (تأمين وتثبيت الهياكل الفكرية والتوثيقية فقط).
+
+#### 🎛️ جدول الأوامر وخطوات التحقق الفردية (Detailed Verification Commands Log)
+
+| كود الأمر المعني | تاريخ التنفيذ | بيان خطوة التحقق / التنفيذ | ملف الـ Migration | حالة الامتثال | الملاحظات ومؤشرات النجاح |
+| :--- | :--- | :--- | :--- | :---: | :--- |
+| `CMD-V5-COMP-001` | 2026-06-29 | Architecture Compliance Engine Setup | `N/A (Pure Registry)` | **PASS** | Installed ✅ (تم بنجاح تركيب وتشغيل سكريبت فحص الدستور الأعلى وإصدار الأدلة المادية) |
 
 ---
 
