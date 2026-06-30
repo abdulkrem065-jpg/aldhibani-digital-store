@@ -1,0 +1,41 @@
+{
+  "environments": {
+    "knowledge_validation": {
+      "name": "Knowledge_Validation",
+      "branch_pattern": "temp-knowledge-val-*",
+      "test_duration_seconds": 60,
+      "cleanup_on_success": true,
+      "cleanup_on_failure": false,
+      "require_rls_check": true,
+      "require_fk_check": true
+    },
+    "supabase_branch": {
+      "name": "Supabase_Branch",
+      "branch_pattern": "db-branch-*",
+      "test_duration_seconds": 300,
+      "cleanup_on_success": true,
+      "cleanup_on_failure": false,
+      "require_rls_check": true,
+      "require_fk_check": true,
+      "max_mock_rows": 100
+    },
+    "docker_local": {
+      "name": "Docker_Local",
+      "branch_pattern": "local-sandbox-*",
+      "test_duration_seconds": 180,
+      "cleanup_on_success": true,
+      "cleanup_on_failure": true,
+      "port_mapping": "3001:3000"
+    },
+    "production": {
+      "name": "Production",
+      "branch_pattern": "main",
+      "test_duration_seconds": 0,
+      "cleanup_on_success": false,
+      "cleanup_on_failure": false,
+      "require_otp": true,
+      "require_manual_approval": true,
+      "allow_raw_sql": false
+    }
+  }
+}

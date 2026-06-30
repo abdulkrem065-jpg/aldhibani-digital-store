@@ -284,6 +284,52 @@ export const storeDatabase = {
 // Authorization Token definition as user's request: STORE_ROUTER_AUTH_TOKEN
 const DECLARED_STORE_ROUTER_AUTH_TOKEN = 'STABLE_LUXURY_HYPERMARKET_KEY_TOKEN_2026';
 
+import { ControlGateway } from './qaroni-engine/gateway/ControlGateway';
+
+// QARONI CONTROL GATEWAY API ENDPOINTS
+app.get('/api/qaroni/logs', (req, res) => {
+  res.json(ControlGateway.getLogs());
+});
+
+app.post('/api/qaroni/mediate', async (req, res) => {
+  try {
+    const { agentName, operationType, payload, constitutionArticle, adrReference, specificationModule, otpCode } = req.body;
+    if (!agentName || !operationType || !payload) {
+      return res.status(400).json({ success: false, error: 'Missing required parameters' });
+    }
+    const result = await ControlGateway.mediateRequest({
+      agentName,
+      operationType,
+      payload,
+      constitutionArticle,
+      adrReference,
+      specificationModule,
+      otpCode
+    }, storeDatabase);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/qaroni/clear', (req, res) => {
+  ControlGateway.clearLogs();
+  res.json({ success: true, message: 'Logs cleared successfully' });
+});
+
+app.post('/api/qaroni/resume', async (req, res) => {
+  try {
+    const { runId, otpCode } = req.body;
+    if (!runId) {
+      return res.status(400).json({ success: false, error: 'Missing runId' });
+    }
+    const result = await ControlGateway.resumeRequest(runId, otpCode, storeDatabase);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // SECURE LOCAL LOGIN
 app.post('/api/auth/login', async (req, res) => {
   try {

@@ -1,0 +1,50 @@
+qaroni-engine/
+├── README.md
+├── agents/
+│   └── AgentsManifest.md
+├── architecture/
+│   ├── Components.md
+│   ├── EngineArchitecture.md
+│   └── ExecutionFlow.md
+├── audit/
+│   └── Placeholder.md
+├── constitution/
+│   └── EngineConstitution.md
+├── database/
+│   └── Placeholder.md
+├── deployment/
+│   └── Placeholder.md
+├── docs/
+│   └── Placeholder.md
+├── events/
+│   └── EventCatalog.md
+├── evidence/
+│   ├── ArchitectureConsistency.md
+│   ├── CrossReferenceAudit.md
+│   ├── EngineStatistics.md
+│   ├── FilesManifest.md
+│   ├── IntegrityHashes.md
+│   ├── ProtocolCoverage.md
+│   └── Tree.txt
+├── github/
+│   └── Placeholder.md
+├── migration/
+│   └── Placeholder.md
+├── permissions/
+│   └── EngineRBAC.md
+├── protocols/
+│   ├── AnalyzeProtocol.md
+│   ├── AuditProtocol.md
+│   ├── DeploymentProtocol.md
+│   ├── MigrationProtocol.md
+│   ├── ReadProtocol.md
+│   ├── RollbackProtocol.md
+│   └── ValidationProtocol.md
+├── reports/
+│   └── ReportsSpec.md
+├── state/
+│   └── TaskLifecycle.md
+├── tests/
+│   └── Placeholder.md
+└── validation/
+    └── Placeholder.md
