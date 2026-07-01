@@ -285,10 +285,16 @@ export const storeDatabase = {
 const DECLARED_STORE_ROUTER_AUTH_TOKEN = 'STABLE_LUXURY_HYPERMARKET_KEY_TOKEN_2026';
 
 import { ControlGateway } from './qaroni-engine/gateway/ControlGateway';
+import { BrainKernel } from './qaroni-engine/brain/BrainKernel';
 
 // QARONI CONTROL GATEWAY API ENDPOINTS
 app.get('/api/qaroni/logs', (req, res) => {
   res.json(ControlGateway.getLogs());
+});
+
+app.get('/api/qaroni/test', (req, res) => {
+  const results = BrainKernel.runTests();
+  res.json(results);
 });
 
 app.post('/api/qaroni/mediate', async (req, res) => {
@@ -2089,6 +2095,16 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`⚡ Luxury Hybrid Hypermarket running on http://localhost:${PORT}`);
+    console.log('🧠 Booting Qaroni AI OS v3.0 BrainKernel...');
+    try {
+      const testSuite = BrainKernel.runTests();
+      console.log('✅ BrainKernel Centralized Suite Executed successfully!');
+      console.log(`- Total Tests Run: ${testSuite.results.length}`);
+      console.log(`- Passed: ${testSuite.results.filter(t => t.passed).length}`);
+      console.log(`- Failed: ${testSuite.results.filter(t => !t.passed).length}`);
+    } catch (err: any) {
+      console.error('❌ BrainKernel Suite Startup Verification Error:', err.message);
+    }
   });
 }
 

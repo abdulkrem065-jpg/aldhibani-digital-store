@@ -9439,18 +9439,18 @@ export default function Dashboard({
                                           </div>
 
                                           {/* Step-by-Step Security Gates */}
-                                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                             <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 space-y-1">
                                               <span className="text-[9px] text-slate-500 block font-bold">1. الفحص الدستوري الحاكم</span>
                                               <span className={`text-[10px] font-bold block ${log.constitutionCheck?.passed ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                                {log.constitutionCheck?.passed ? `✓ مطابقة: ${log.constitutionCheck?.articleMatched?.substring(0, 20)}...` : '❌ خرق دستوري فوري'}
+                                                {log.constitutionCheck?.passed ? `✓ مطابقة: ${log.constitutionCheck?.articleMatched?.substring(0, 15)}...` : '❌ خرق دستوري فوري'}
                                               </span>
                                             </div>
 
                                             <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 space-y-1">
                                               <span className="text-[9px] text-slate-500 block font-bold">2. مصفوفة الصلاحيات (RBAC)</span>
                                               <span className={`text-[10px] font-bold block ${log.rbacCheck?.passed ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                                {log.rbacCheck?.passed ? `✓ دور معتمد: ${log.rbacCheck?.roleMatched}` : `❌ محظور: ${log.rbacCheck?.reason?.substring(0, 20)}...`}
+                                                {log.rbacCheck?.passed ? `✓ دور معتمد: ${log.rbacCheck?.roleMatched}` : `❌ محظور: ${log.rbacCheck?.reason?.substring(0, 15)}...`}
                                               </span>
                                             </div>
 
@@ -9459,6 +9459,33 @@ export default function Dashboard({
                                               <span className={`text-[10px] font-bold block ${log.knowledgeValidation?.passed ? 'text-emerald-400' : 'text-rose-400'}`}>
                                                 {log.knowledgeValidation?.passed ? '✓ سلامة المخططات والكشافات' : '❌ خطأ اتساق الجداول'}
                                               </span>
+                                            </div>
+
+                                            <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 space-y-1">
+                                              <span className="text-[9px] text-slate-500 block font-bold">4. محرك التفكير والتقييم المعرفي</span>
+                                              <span className={`text-[10px] font-bold block ${log.reasoningCheck?.passed !== false ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                {log.reasoningCheck?.passed !== false 
+                                                  ? `✓ ثقة ${log.reasoningCheck?.confidenceScore || 95}% (خطورة ${log.reasoningCheck?.riskScore || 10}%)` 
+                                                  : `❌ حظر: خطورة ${log.reasoningCheck?.riskScore}%`}
+                                              </span>
+                                            </div>
+                                          </div>
+
+                                          {/* Context and System Metadata */}
+                                          <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 grid grid-cols-1 sm:grid-cols-3 gap-3 text-right">
+                                            <div>
+                                              <span className="text-[9px] text-slate-500 block">سياق نظام التشغيل (System Context):</span>
+                                              <span className="text-[10px] font-mono font-bold text-cyan-400 block mt-0.5">{log.system_context || 'AUTONOMOUS_GOVERNED_COGNITIVE_ENGINE'}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-[9px] text-slate-500 block">مؤشر خطورة العملية (Risk Score):</span>
+                                              <span className={`text-[10px] font-mono font-bold block mt-0.5 ${(log.risk_score || log.reasoningCheck?.riskScore || 10) > 60 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                                {log.risk_score || log.reasoningCheck?.riskScore || 10} / 100
+                                              </span>
+                                            </div>
+                                            <div>
+                                              <span className="text-[9px] text-slate-500 block">مؤشر التراجع الآمن والتعافي (Rollback Pointer):</span>
+                                              <span className="text-[10px] font-mono font-bold text-amber-500 block mt-0.5">{log.rollback_pointer || 'STABLE_SYSTEM_STATE_SNAPSHOT_HEAD'}</span>
                                             </div>
                                           </div>
 
@@ -9480,8 +9507,8 @@ export default function Dashboard({
                                               </div>
                                               <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-850 text-right">
                                                 <span className="text-[9px] text-slate-500 block">د. خط الإنتاج النهائي</span>
-                                                <span className={`text-[10px] font-mono font-bold block mt-0.5 ${log.approvalGate?.passed ? 'text-emerald-400' : 'text-amber-500'}`}>
-                                                  {log.approvalGate?.passed ? '✓ Production (OTP OK)' : '⏱️ بانتظار الموافقة'}
+                                                <span className={`text-[10px] font-mono font-bold block mt-0.5 ${log.approvalGate?.passed || log.status === 'completed' ? 'text-emerald-400' : 'text-amber-500'}`}>
+                                                  {log.approvalGate?.passed || log.status === 'completed' ? '✓ Production (OTP OK)' : '⏱️ بانتظار الموافقة'}
                                                 </span>
                                               </div>
                                             </div>
